@@ -9,6 +9,30 @@ int wrap_avcodec_decode_video2(AVCodecContext *ctx, AVFrame *frame, void *data, 
 int wrap_av_image_alloc(uint8_t *pointers[4], int linesizes[4], int w, int h, enum AVPixelFormat pix_fmt, int align) {
 	return av_image_alloc(pointers, linesizes, w, h, pix_fmt, align);
 }
+int wrap_av_opt_set_int_list(void* obj, const char* name, void* val, int64_t term, int64_t flags) {
+	if (av_int_list_length(val, term) > INT_MAX / sizeof(*(val))) {
+		return AVERROR(EINVAL);
+	} 
+	return av_opt_set_bin(obj, name, (const uint8_t *)(val), av_int_list_length(val, term) * sizeof(*(val)), flags);
+}
+
+void free_filters_io(AVFilterContext* f) {
+	for(int i=0; i<f->nb_inputs;i++) {
+		if(f->inputs[i]) {
+			free(f->inputs[i]);
+			f->inputs[i] = NULL;
+		}
+	}
+	for(int i=0; i<f->nb_outputs;i++) {
+		if(f->outputs[i]) {
+			free(f->outputs[i]);
+			f->outputs[i] = NULL;
+		}
+	}
+}
+
+	#cgo pkg-config: libavfilter
+	#include <libavfilter/avfilter.h>
 */
 import "C"
 import (
@@ -27,8 +51,15 @@ type VideoScaler struct {
 	inHeight, OutHeight int
 	inYStride, OutYStride int
 	inCStride, OutCStride int
+	inFpsNum, OutFpsNum int
+	inFpsDen, OutFpsDen int
 	swsCtx *C.struct_SwsContext
 	outputImgPtr unsafe.Pointer
+
+	pts int
+	framerateConverterReady bool
+	inVideoFilter  *C.AVFilterContext // the first filter in the video chain
+	outVideoFilter *C.AVFilterContext // the last filter in the video chain
 }
 
 func (self *VideoScaler) Close() {
@@ -99,6 +130,10 @@ func (self *VideoScaler) VideoScale(src av.VideoFrameRaw) (dst av.VideoFrameRaw,
 		self.inYStride = src.YStride
 		self.inCStride = src.CStride
 
+		fmt.Printf("Create scale context: %s, %dx%d -> %s, %dx%d\n",
+				/*C.av_get_pix_fmt_name*/(self.inPixelFormat.String()), self.inWidth, self.inHeight,
+				/*C.av_get_pix_fmt_name*/(self.OutPixelFormat.String()), self.OutWidth, self.OutHeight);
+
 		self.swsCtx = C.sws_getContext(C.int(self.inWidth), C.int(self.inHeight), PixelFormatAV2FF(self.inPixelFormat),
 			C.int(self.OutWidth), C.int(self.OutHeight), PixelFormatAV2FF(self.OutPixelFormat),
 			C.SWS_BILINEAR, (*C.SwsFilter)(C.NULL), (*C.SwsFilter)(C.NULL), (*C.double)(C.NULL))
@@ -111,9 +146,277 @@ func (self *VideoScaler) VideoScale(src av.VideoFrameRaw) (dst av.VideoFrameRaw,
 		}
 	}
 
+	if !self.framerateConverterReady {
+		err = self.ConfigureVideoFilters()
+		if err == nil {
+
+			fmt.Println("ConfigureVideoFilters ok")
+			self.framerateConverterReady = true
+		} else {
+			fmt.Println("ConfigureVideoFilters failed:", err)
+		}
+	}
+
+
 	dst, err = self.videoScaleOne(src)
+	var frame C.AVFrame
+
+	if /* TODO fps conv needed && */ self.framerateConverterReady {
+		var cret C.int
+
+		// VideoFrameAssignToFF(frame, ff.frame)
+		frame.format = C.int32_t(PixelFormatAV2FF(dst.GetPixelFormat()))
+
+		ys, cs := dst.GetStride()
+		frame.linesize[0] = C.int(ys)
+		frame.linesize[1] = C.int(cs)
+		frame.linesize[2] = C.int(cs)
+
+		w, h := dst.GetResolution()
+		frame.width = C.int(w)
+		frame.height = C.int(h)
+		frame.sample_aspect_ratio.num = 1 // TODO
+		frame.sample_aspect_ratio.den = 1
+
+		data0, data1, data2 := dst.GetDataPtr()
+		frame.data[0] = (*C.uchar)(data0)
+		frame.data[1] = (*C.uchar)(data1)
+		frame.data[2] = (*C.uchar)(data2)
+
+		frame.pts = C.int64_t(self.pts)
+		self.pts++
+
+		// fmt.Printf("\033[44m%+v\n\033[0m", frame)
+		// fmt.Printf("\033[44m%+v\n\033[0m", self.inVideoFilter)
+		// fmt.Printf("\033[44m%+v\n\033[0m", self.outVideoFilter)
+
+		cret = C.av_buffersrc_add_frame(self.inVideoFilter, &frame)
+
+		if int(cret) < 0 {
+			err = fmt.Errorf("av_buffersrc_add_frame failed")
+			fmt.Println(err)
+			return
+		}
+
+
+		cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, &frame, C.int(0))
+		if int(cret) < 0 {
+			if cret == C.AVERROR_EOF {
+				// is->viddec.finished = is->viddec.pkt_serial;
+				fmt.Println("finished !!!!!!")
+			}
+			// ret = 0;
+			// break;
+		}""
+	}
 	return
 }
+
+// static int configure_video_filters()
+func (self *VideoScaler) ConfigureVideoFilters() (err error) {
+	var ret int
+	var filt_src, filt_out, last_filter *C.AVFilterContext
+	var graph *C.struct_AVFilterGraph = C.avfilter_graph_alloc() // TODO free
+
+	// sws_flags_str := fmt.Sprintf("flags=%s", ) // sws flags go here
+	// csws_flags_str := C.CString(sws_flags_str)
+	// defer C.free(unsafe.Pointer(csws_flags_str))
+	// if C.strlen(csws_flags_str) {
+	// 	csws_flags_str[C.strlen(csws_flags_str)-1] = 0 // '\0'
+	// }
+	// graph.scale_sws_opts = av_strdup(csws_flags_str)
+
+	buffersrc_args := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:frame_rate=%d/%d",
+		self.inWidth, self.inHeight, C.int32_t(PixelFormatAV2FF(self.inPixelFormat)),
+		self.OutFpsDen, self.OutFpsNum, 1, 1, // sar num,  max(sar denom, 1)
+		self.OutFpsNum, self.OutFpsDen)
+
+	fmt.Printf("\033[44m%+v\n\033[0m", buffersrc_args)
+
+	// fmt.Println("buffersrc_args", buffersrc_args)
+	cbuffersrc_args := C.CString(buffersrc_args)
+	defer C.free(unsafe.Pointer(cbuffersrc_args))
+
+	strbuffer := C.CString("buffer")
+	defer C.free(unsafe.Pointer(strbuffer))
+
+	strffplay_buffer := C.CString("ffplay_buffer")
+	defer C.free(unsafe.Pointer(strffplay_buffer))
+
+	ret = int(C.avfilter_graph_create_filter(&filt_src, C.avfilter_get_by_name(strbuffer), strffplay_buffer, cbuffersrc_args, C.NULL, graph))
+	if ret < 0 {
+		err = fmt.Errorf("avfilter_graph_create_filter failed")
+		return
+	}
+
+	strbuffersink := C.CString("buffersink")
+	defer C.free(unsafe.Pointer(strbuffersink))
+
+	strffplay_buffersink := C.CString("ffplay_buffersink")
+	defer C.free(unsafe.Pointer(strffplay_buffersink))
+
+	ret = int(C.avfilter_graph_create_filter(&filt_out, C.avfilter_get_by_name(strbuffersink), strffplay_buffersink, (*C.char)(C.NULL), C.NULL, graph))
+	if ret < 0 {
+		err = fmt.Errorf("avfilter_graph_create_filter failed")
+		return
+	}
+
+
+
+	var pix_fmts [2]C.enum_AVPixelFormat
+	pix_fmts[0] = C.AV_PIX_FMT_YUV420P
+	pix_fmts[1] = C.AV_PIX_FMT_NONE;
+
+
+	strpix_fmts := C.CString("pix_fmts")
+    defer C.free(unsafe.Pointer(strpix_fmts))
+
+	// TODO address of pix_fmts ?
+	ret = int(C.wrap_av_opt_set_int_list(unsafe.Pointer(filt_out), strpix_fmts, unsafe.Pointer(&pix_fmts),  C.AV_PIX_FMT_NONE, C.AV_OPT_SEARCH_CHILDREN))
+	if ret < 0 {
+		err = fmt.Errorf("wrap_av_opt_set_int_list failed")
+		return
+	}
+
+	last_filter = filt_out;
+
+	// FIXME version without configureFiltergraph
+	filterarg := fmt.Sprintf("fps=%d/%d", 1000, 1000)
+	self.AddFilter(graph, filt_src, last_filter, "framerate", filterarg)
+	ret = int(C.avfilter_graph_config(graph, C.NULL))
+	if ret < 0 {
+		err = fmt.Errorf("avfilter_graph_config failed")
+	}
+
+/*
+	// TODO fill vfilters with filters pipeline
+	vfilters := fmt.Sprintf("fps=fps=%d/%d", 1000, 1000)//self.OutFpsNum, self.OutFpsDen)
+	cvfilters := C.CString(vfilters)
+	defer C.free(unsafe.Pointer(cvfilters))
+
+	err = self.configureFiltergraph(graph, cvfilters, filt_src, last_filter)
+	if err != nil {
+		return
+	}
+*/
+
+	self.inVideoFilter  = filt_src;
+	self.outVideoFilter = filt_out;
+	return
+}
+
+// Note: this func adds a filter before the lastly added filter, so the
+// processing order of the filters is in reverse
+func (self *VideoScaler) AddFilter(graph *C.AVFilterGraph, first_filter *C.AVFilterContext, last_filter *C.AVFilterContext, name string, arg string) (err error){
+	var ret int
+	var filt_ctx *C.AVFilterContext
+
+	strname := C.CString(name)
+	defer C.free(unsafe.Pointer(strname))
+
+	strprefix := C.CString("ffplay_")
+	defer C.free(unsafe.Pointer(strprefix))
+
+	strarg := C.CString(arg)
+	defer C.free(unsafe.Pointer(strarg))
+
+	ret = int(C.avfilter_graph_create_filter(&filt_ctx, C.avfilter_get_by_name(strname), strprefix, strarg, C.NULL, graph))
+	if ret < 0 {
+		err = fmt.Errorf("avfilter_graph_create_filter failed")
+		return
+	}
+
+	ret = int(C.avfilter_link(filt_ctx, 0, last_filter, 0))
+	if ret < 0 {
+		err = fmt.Errorf("first avfilter_link failed: %d", ret)
+		return
+	}
+
+	ret = int(C.avfilter_link(first_filter, 0, filt_ctx, 0))
+	if ret < 0 {
+		err = fmt.Errorf("second avfilter_link failed: %d", ret)
+		return
+	}
+
+	return
+}
+
+
+func (self *VideoScaler) configureFiltergraph(graph *C.AVFilterGraph, filtergraph *C.char, source_ctx *C.AVFilterContext, sink_ctx *C.AVFilterContext) (err error){
+	var inputs, outputs *C.AVFilterInOut
+
+	nb_filters_init := graph.nb_filters 
+	if filtergraph != (*C.char)(C.NULL) {
+		outputs = C.avfilter_inout_alloc()
+		inputs  = C.avfilter_inout_alloc()
+		defer C.avfilter_inout_free(&outputs)
+		defer C.avfilter_inout_free(&inputs)
+		if (unsafe.Pointer(outputs) == C.NULL || unsafe.Pointer(inputs) == C.NULL) {
+			err = fmt.Errorf("ENOMEM")
+			return
+		}
+	}
+
+	strin := C.CString("in")
+	defer C.free(unsafe.Pointer(strin))
+	outputs.name       = C.av_strdup(strin)
+	outputs.filter_ctx = source_ctx
+	outputs.pad_idx    = 0
+	outputs.next       = (*C.struct_AVFilterInOut)(C.NULL)
+
+	strout := C.CString("out")
+	defer C.free(unsafe.Pointer(strout))
+	inputs.name        = C.av_strdup(strout)
+	inputs.filter_ctx  = sink_ctx
+	inputs.pad_idx     = 0
+	inputs.next        = (*C.struct_AVFilterInOut)(C.NULL)
+
+	ret := int(C.avfilter_graph_parse_ptr(graph, filtergraph, &inputs, &outputs, C.NULL))
+	if ret < 0 {
+		err = fmt.Errorf("avfilter_graph_parse_ptr failed")
+		return
+	} else {
+		C.free_filters_io(source_ctx)
+		C.free_filters_io(sink_ctx)
+
+		ret = int(C.avfilter_link(source_ctx, 0, sink_ctx, 0))
+
+		if ret < 0 {
+			err = fmt.Errorf("avfilter_link failed: %d", ret) // FIXME
+			return
+		}
+	}
+
+	// Reorder the filters to ensure that inputs of the custom filters are merged first
+	nb_filters := graph.nb_filters
+	filters := (*[1 << 30]C.AVFilterContext)(unsafe.Pointer(graph.filters))[:nb_filters:nb_filters]
+
+	// fmt.Printf("filters: %+v\n", filters)
+	// fmt.Println("nb_filters", nb_filters)
+	// fmt.Println("nb_filters_init", nb_filters_init)
+
+	for i := 0; i < int(nb_filters - nb_filters_init); i++ {
+		// swap
+		target := i + int(nb_filters) - 1
+		fmt.Println("swap", i, "with", target)
+
+		filters[i], filters[target] = filters[target], filters[i]
+	}
+
+	// fmt.Printf("filters: %+v\n", filters)
+	// fmt.Printf("graph: %+v\n", graph)
+
+	ret = int(C.avfilter_graph_config(graph, C.NULL))
+	if ret < 0 {
+		err = fmt.Errorf("avfilter_graph_config failed")
+	} else {
+		err = fmt.Errorf("avfilter_graph_config ok")
+	}
+	return
+}
+
+
+// TODO VideoConverter type
 
 
 // VideoEncoder contains all params that must be set by user to initialize the video encoder
@@ -363,16 +666,20 @@ func (enc *VideoEncoder) encodeOne(frame av.VideoFrameRaw) (gotpkt bool, pkt []b
 func (self *VideoEncoder) scale(in av.VideoFrameRaw) (out av.VideoFrameRaw, err error) {
 	if self.scaler == nil {
 		self.scaler = &VideoScaler{
-			inPixelFormat:	in.GetPixelFormat(),
-			inWidth:		in.Width(),
-			inHeight:		in.Height(),
-			inYStride:		in.YStride,
-			inCStride:		in.CStride,
-			OutPixelFormat:	self.pixelFormat,
-			OutWidth:		self.width,
-			OutHeight:		self.height,
-			OutYStride:		self.width,
-			OutCStride:		self.width/in.GetPixelFormat().HorizontalSubsampleRatio(),
+			inPixelFormat:		in.GetPixelFormat(),
+			inWidth:			in.Width(),
+			inHeight:			in.Height(),
+			inYStride:			in.YStride,
+			inCStride:			in.CStride,
+			inFpsNum:			in.FpsNum,
+			inFpsDen:			in.FpsDen,
+			OutPixelFormat:		self.pixelFormat,
+			OutWidth:			self.width,
+			OutHeight:			self.height,
+			OutYStride:			self.width,
+			OutCStride:			self.width/in.GetPixelFormat().HorizontalSubsampleRatio(),
+			OutFpsNum:			self.fpsNum,
+			OutFpsDen:			self.fpsDen,
 		}
 	}
 	if out, err = self.scaler.VideoScale(in); err != nil {
@@ -386,7 +693,7 @@ func (enc *VideoEncoder) Encode(frame av.VideoFrameRaw) (pkts [][]byte, err erro
 	var gotpkt bool
 	var pkt []byte
 
-	if frame.PixelFormat != enc.pixelFormat || frame.Width() != enc.width || frame.Height() != enc.height/* TODO add stride ? */ {
+	if true /* TODO fps different */ || frame.PixelFormat != enc.pixelFormat || frame.Width() != enc.width || frame.Height() != enc.height/* TODO add stride ? */ {
 		if frame, err = enc.scale(frame); err != nil {
 			return nil, err
 		}
