@@ -42,9 +42,15 @@ import (
 	"github.com/nareix/joy4/codec/h264parser"
 )
 
+type VideoFramerate struct {
+	Num int
+	Den int
+}
+
 type VideoFrame struct {
 	Image image.YCbCr
 	frame *C.AVFrame
+	Framerate VideoFramerate
 }
 
 func (self *VideoFrame) Free() {
@@ -80,6 +86,10 @@ func (v VideoFrame) GetDataPtr() (y, cb, cr *[]uint8) {
 	return &v.Image.Y, &v.Image.Cb, &v.Image.Cr
 }
 
+func (v VideoFrame) GetFramerate() (num, den int) {
+	return v.Framerate.Num, v.Framerate.Den
+}
+
 func (v VideoFrame) GetScanningMode() (mode av.ScanningMode) {
 	if int(v.frame.interlaced_frame) != 0 {
 		if int(v.frame.top_field_first) != 0 {
@@ -102,6 +112,11 @@ func (v *VideoFrame) SetStride(yStride, cStride int) {
 
 func (v *VideoFrame) SetResolution(w, h int) {
 	v.Image.Rect = image.Rectangle{ image.Point{0,0}, image.Point{w, h}}
+}
+
+func (v *VideoFrame) SetFramerate(num, den int) {
+	v.Framerate.Num = num
+	v.Framerate.Den = den
 }
 
 type VideoScaler struct {
@@ -223,24 +238,20 @@ func (self *VideoScaler) VideoScale(src *VideoFrame) (dst *VideoFrame, err error
 	if /* TODO fps conv needed && */ self.framerateConverterReady {
 		var cret C.int
 
-		// VideoFrameAssignToFF(frame, ff.frame)
-		frame.format = C.int32_t(PixelFormatAV2FF(dst.GetPixelFormat()))
+		frame.format = dst.frame.format
 
-		ys, cs := dst.GetStride()
-		frame.linesize[0] = C.int(ys)
-		frame.linesize[1] = C.int(cs)
-		frame.linesize[2] = C.int(cs)
+		frame.linesize[0] = C.int(dst.Image.YStride)
+		frame.linesize[1] = C.int(dst.Image.CStride)
+		frame.linesize[2] = C.int(dst.Image.CStride)
 
-		w, h := dst.GetResolution()
-		frame.width = C.int(w)
-		frame.height = C.int(h)
-		frame.sample_aspect_ratio.num = 1 // TODO
+		frame.width = C.int(dst.Width())
+		frame.height = C.int(dst.Height())
+		frame.sample_aspect_ratio.num = 0 // TODO
 		frame.sample_aspect_ratio.den = 1
 
-		data0, data1, data2 := dst.GetDataPtr()
-		frame.data[0] = (*C.uchar)(data0)
-		frame.data[1] = (*C.uchar)(data1)
-		frame.data[2] = (*C.uchar)(data2)
+		frame.data[0] = (*C.uchar)(unsafe.Pointer(&dst.Image.Y[0]))
+		frame.data[1] = (*C.uchar)(unsafe.Pointer(&dst.Image.Cb[0]))
+		frame.data[2] = (*C.uchar)(unsafe.Pointer(&dst.Image.Cr[0]))
 
 		frame.pts = C.int64_t(self.pts)
 		self.pts++
@@ -266,7 +277,7 @@ func (self *VideoScaler) VideoScale(src *VideoFrame) (dst *VideoFrame, err error
 			}
 			// ret = 0;
 			// break;
-		}""
+		}
 	}
 	return
 }
@@ -648,15 +659,15 @@ func (self *VideoEncoder) scale(img *VideoFrame) (out *VideoFrame, err error) {
 			inHeight:		img.Image.Rect.Dy(),
 			inYStride:		img.Image.YStride,
 			inCStride:		img.Image.CStride,
-			inFpsNum:			in.FpsNum,
-			inFpsDen:			in.FpsDen,
+			inFpsNum:		img.Framerate.Num,
+			inFpsDen:		img.Framerate.Den,
 			OutPixelFormat:	self.pixelFormat,
 			OutWidth:		self.width,
 			OutHeight:		self.height,
 			OutYStride:		self.width,
 			OutCStride:		self.width/self.pixelFormat.HorizontalSubsampleRatio(),
-			OutFpsNum:			self.fpsNum,
-			OutFpsDen:			self.fpsDen,
+			OutFpsNum:		self.fpsNum,
+			OutFpsDen:		self.fpsDen,
 		}
 	}
 	if out, err = self.scaler.VideoScale(img); err != nil {
@@ -835,15 +846,23 @@ func (self *VideoDecoder) Decode(pkt []byte) (img *VideoFrame, err error) {
 		ys := int(frame.linesize[0])
 		cs := int(frame.linesize[1])
 
+		num, den := self.GetFramerate()
+
 		img = &VideoFrame{Image: image.YCbCr{
-			Y: fromCPtr(unsafe.Pointer(frame.data[0]), ys*h),
-			Cb: fromCPtr(unsafe.Pointer(frame.data[1]), cs*h/2),
-			Cr: fromCPtr(unsafe.Pointer(frame.data[2]), cs*h/2),
-			YStride: ys,
-			CStride: cs,
-			SubsampleRatio: image.YCbCrSubsampleRatio420,
-			Rect: image.Rect(0, 0, w, h),
-		}, frame: frame}
+				Y: fromCPtr(unsafe.Pointer(frame.data[0]), ys*h),
+				Cb: fromCPtr(unsafe.Pointer(frame.data[1]), cs*h/2),
+				Cr: fromCPtr(unsafe.Pointer(frame.data[2]), cs*h/2),
+				YStride: ys,
+				CStride: cs,
+				SubsampleRatio: image.YCbCrSubsampleRatio420,
+				Rect: image.Rect(0, 0, w, h),
+			},
+			frame: frame,
+			Framerate: VideoFramerate{
+				Num: num,
+				Den: den,
+			},
+		}
 		runtime.SetFinalizer(img, freeVideoFrame)
 	}
 
