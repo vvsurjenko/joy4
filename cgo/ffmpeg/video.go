@@ -370,25 +370,12 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 
 	last_filter = filt_out;
 
-	if true {
-		// FIXME version without configureFiltergraph
-		filterarg := fmt.Sprintf("fps=%d/%d", 12000, 1000)
-		fmt.Printf("\033[45m%+v\n\033[0m", filterarg)
-		self.AddFilter(filt_src, last_filter, "framerate", filterarg)
-		ret = int(C.avfilter_graph_config(self.graph, C.NULL))
-		if ret < 0 {
-			err = fmt.Errorf("avfilter_graph_config failed")
-		}
-	} else {
-		// TODO fill vfilters with filters pipeline
-		vfilters := fmt.Sprintf("fps=fps=%d/%d", 1000, 1000)//self.OutFpsNum, self.OutFpsDen)
-		cvfilters := C.CString(vfilters)
-		defer C.free(unsafe.Pointer(cvfilters))
-
-		err = self.configureFiltergraph(cvfilters, filt_src, last_filter)
-		if err != nil {
-			return
-		}
+	filterarg := fmt.Sprintf("fps=%d/%d", 12000, 1000)
+	fmt.Printf("\033[45m%+v\n\033[0m", filterarg)
+	self.AddFilter(filt_src, last_filter, "framerate", filterarg)
+	ret = int(C.avfilter_graph_config(self.graph, C.NULL))
+	if ret < 0 {
+		err = fmt.Errorf("avfilter_graph_config failed")
 	}
 
 	self.inVideoFilter  = filt_src;
@@ -429,79 +416,6 @@ func (self *FramerateConverter) AddFilter(first_filter *C.AVFilterContext, last_
 		return
 	}
 
-	return
-}
-
-func (self *FramerateConverter) configureFiltergraph(filtergraph *C.char, source_ctx *C.AVFilterContext, sink_ctx *C.AVFilterContext) (err error){
-	var inputs, outputs *C.AVFilterInOut
-
-	nb_filters_init := self.graph.nb_filters 
-	if filtergraph != (*C.char)(C.NULL) {
-		outputs = C.avfilter_inout_alloc()
-		inputs  = C.avfilter_inout_alloc()
-		defer C.avfilter_inout_free(&outputs)
-		defer C.avfilter_inout_free(&inputs)
-		if (unsafe.Pointer(outputs) == C.NULL || unsafe.Pointer(inputs) == C.NULL) {
-			err = fmt.Errorf("ENOMEM")
-			return
-		}
-	}
-
-	strin := C.CString("in")
-	defer C.free(unsafe.Pointer(strin))
-	outputs.name       = C.av_strdup(strin)
-	outputs.filter_ctx = source_ctx
-	outputs.pad_idx    = 0
-	outputs.next       = (*C.struct_AVFilterInOut)(C.NULL)
-
-	strout := C.CString("out")
-	defer C.free(unsafe.Pointer(strout))
-	inputs.name        = C.av_strdup(strout)
-	inputs.filter_ctx  = sink_ctx
-	inputs.pad_idx     = 0
-	inputs.next        = (*C.struct_AVFilterInOut)(C.NULL)
-
-	ret := int(C.avfilter_graph_parse_ptr(self.graph, filtergraph, &inputs, &outputs, C.NULL))
-	if ret < 0 {
-		err = fmt.Errorf("avfilter_graph_parse_ptr failed")
-		return
-	} else {
-		C.free_filters_io(source_ctx)
-		C.free_filters_io(sink_ctx)
-
-		ret = int(C.avfilter_link(source_ctx, 0, sink_ctx, 0))
-
-		if ret < 0 {
-			err = fmt.Errorf("avfilter_link failed: %d", ret) // FIXME
-			return
-		}
-	}
-
-	// Reorder the filters to ensure that inputs of the custom filters are merged first
-	nb_filters := self.graph.nb_filters
-	filters := (*[1 << 30]C.AVFilterContext)(unsafe.Pointer(self.graph.filters))[:nb_filters:nb_filters]
-
-	// fmt.Printf("filters: %+v\n", filters)
-	// fmt.Println("nb_filters", nb_filters)
-	// fmt.Println("nb_filters_init", nb_filters_init)
-
-	for i := 0; i < int(nb_filters - nb_filters_init); i++ {
-		// swap
-		target := i + int(nb_filters) - 1
-		fmt.Println("swap", i, "with", target)
-
-		filters[i], filters[target] = filters[target], filters[i]
-	}
-
-	// fmt.Printf("filters: %+v\n", filters)
-	// fmt.Printf("self.graph: %+v\n", self.graph)
-
-	ret = int(C.avfilter_graph_config(self.graph, C.NULL))
-	if ret < 0 {
-		err = fmt.Errorf("avfilter_graph_config failed")
-	} else {
-		err = fmt.Errorf("avfilter_graph_config ok")
-	}
 	return
 }
 
