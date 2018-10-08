@@ -131,7 +131,9 @@ type VideoScaler struct {
 }
 
 func (self *VideoScaler) Close() {
-	C.sws_freeContext(self.swsCtx);
+	if self != nil {
+		C.sws_freeContext(self.swsCtx)
+	}
 }
 
 func (self *VideoScaler) FreeOutputImage() {
@@ -226,14 +228,16 @@ type FramerateConverter struct {
 	inFpsDen, OutFpsDen int
 	
 	pts int
-	ready bool
+	graph *C.struct_AVFilterGraph
 	inVideoFilter  *C.AVFilterContext // the first filter in the video chain
 	outVideoFilter *C.AVFilterContext // the last filter in the video chain
 	outputFrame *C.AVFrame
 }
 
 func (self *FramerateConverter) Close() {
-	// TODO
+	if self != nil {
+		C.avfilter_graph_free(&self.graph)
+	}
 }
 
 func (self *FramerateConverter) FreeOutputImage() {
@@ -244,17 +248,16 @@ func (self *FramerateConverter) FreeOutputImage() {
 }
 
 func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out *VideoFrame, err error){
-	if !self.ready {
+	if self.graph == nil {
 		err = self.ConfigureVideoFilters()
 		if err == nil {
 			fmt.Println("ConfigureVideoFilters ok")
-			self.ready = true
 		} else {
 			fmt.Println("ConfigureVideoFilters failed:", err)
 		}
 	}
 
-	if !self.ready {
+	if self.graph == nil {
 		return
 	}
 
@@ -306,7 +309,7 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out *VideoFram
 func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	var ret int
 	var filt_src, filt_out, last_filter *C.AVFilterContext
-	var graph *C.struct_AVFilterGraph = C.avfilter_graph_alloc() // TODO free
+	self.graph = C.avfilter_graph_alloc()
 
 	// sws_flags_str := fmt.Sprintf("flags=%s", ) // sws flags go here
 	// csws_flags_str := C.CString(sws_flags_str)
@@ -314,7 +317,7 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	// if C.strlen(csws_flags_str) {
 	// 	csws_flags_str[C.strlen(csws_flags_str)-1] = 0 // '\0'
 	// }
-	// graph.scale_sws_opts = av_strdup(csws_flags_str)
+	// self.graph.scale_sws_opts = av_strdup(csws_flags_str)
 
 	// Input filter config
 	buffersrc_args := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:frame_rate=%d/%d",
@@ -332,7 +335,7 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	strffplay_buffer := C.CString("ffplay_buffer")
 	defer C.free(unsafe.Pointer(strffplay_buffer))
 
-	ret = int(C.avfilter_graph_create_filter(&filt_src, C.avfilter_get_by_name(strbuffer), strffplay_buffer, cbuffersrc_args, C.NULL, graph))
+	ret = int(C.avfilter_graph_create_filter(&filt_src, C.avfilter_get_by_name(strbuffer), strffplay_buffer, cbuffersrc_args, C.NULL, self.graph))
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_create_filter failed")
 		return
@@ -345,7 +348,7 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	strffplay_buffersink := C.CString("ffplay_buffersink")
 	defer C.free(unsafe.Pointer(strffplay_buffersink))
 
-	ret = int(C.avfilter_graph_create_filter(&filt_out, C.avfilter_get_by_name(strbuffersink), strffplay_buffersink, (*C.char)(C.NULL), C.NULL, graph))
+	ret = int(C.avfilter_graph_create_filter(&filt_out, C.avfilter_get_by_name(strbuffersink), strffplay_buffersink, (*C.char)(C.NULL), C.NULL, self.graph))
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_create_filter failed")
 		return
@@ -371,8 +374,8 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 		// FIXME version without configureFiltergraph
 		filterarg := fmt.Sprintf("fps=%d/%d", 12000, 1000)
 		fmt.Printf("\033[45m%+v\n\033[0m", filterarg)
-		self.AddFilter(graph, filt_src, last_filter, "framerate", filterarg)
-		ret = int(C.avfilter_graph_config(graph, C.NULL))
+		self.AddFilter(filt_src, last_filter, "framerate", filterarg)
+		ret = int(C.avfilter_graph_config(self.graph, C.NULL))
 		if ret < 0 {
 			err = fmt.Errorf("avfilter_graph_config failed")
 		}
@@ -382,7 +385,7 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 		cvfilters := C.CString(vfilters)
 		defer C.free(unsafe.Pointer(cvfilters))
 
-		err = self.configureFiltergraph(graph, cvfilters, filt_src, last_filter)
+		err = self.configureFiltergraph(cvfilters, filt_src, last_filter)
 		if err != nil {
 			return
 		}
@@ -395,7 +398,7 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 
 // Note: this func adds a filter before the lastly added filter, so the
 // processing order of the filters is in reverse
-func (self *FramerateConverter) AddFilter(graph *C.AVFilterGraph, first_filter *C.AVFilterContext, last_filter *C.AVFilterContext, name string, arg string) (err error){
+func (self *FramerateConverter) AddFilter(first_filter *C.AVFilterContext, last_filter *C.AVFilterContext, name string, arg string) (err error){
 	var ret int
 	var filt_ctx *C.AVFilterContext
 
@@ -408,7 +411,7 @@ func (self *FramerateConverter) AddFilter(graph *C.AVFilterGraph, first_filter *
 	strarg := C.CString(arg)
 	defer C.free(unsafe.Pointer(strarg))
 
-	ret = int(C.avfilter_graph_create_filter(&filt_ctx, C.avfilter_get_by_name(strname), strprefix, strarg, C.NULL, graph))
+	ret = int(C.avfilter_graph_create_filter(&filt_ctx, C.avfilter_get_by_name(strname), strprefix, strarg, C.NULL, self.graph))
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_create_filter failed")
 		return
@@ -429,10 +432,10 @@ func (self *FramerateConverter) AddFilter(graph *C.AVFilterGraph, first_filter *
 	return
 }
 
-func (self *FramerateConverter) configureFiltergraph(graph *C.AVFilterGraph, filtergraph *C.char, source_ctx *C.AVFilterContext, sink_ctx *C.AVFilterContext) (err error){
+func (self *FramerateConverter) configureFiltergraph(filtergraph *C.char, source_ctx *C.AVFilterContext, sink_ctx *C.AVFilterContext) (err error){
 	var inputs, outputs *C.AVFilterInOut
 
-	nb_filters_init := graph.nb_filters 
+	nb_filters_init := self.graph.nb_filters 
 	if filtergraph != (*C.char)(C.NULL) {
 		outputs = C.avfilter_inout_alloc()
 		inputs  = C.avfilter_inout_alloc()
@@ -458,7 +461,7 @@ func (self *FramerateConverter) configureFiltergraph(graph *C.AVFilterGraph, fil
 	inputs.pad_idx     = 0
 	inputs.next        = (*C.struct_AVFilterInOut)(C.NULL)
 
-	ret := int(C.avfilter_graph_parse_ptr(graph, filtergraph, &inputs, &outputs, C.NULL))
+	ret := int(C.avfilter_graph_parse_ptr(self.graph, filtergraph, &inputs, &outputs, C.NULL))
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_parse_ptr failed")
 		return
@@ -475,8 +478,8 @@ func (self *FramerateConverter) configureFiltergraph(graph *C.AVFilterGraph, fil
 	}
 
 	// Reorder the filters to ensure that inputs of the custom filters are merged first
-	nb_filters := graph.nb_filters
-	filters := (*[1 << 30]C.AVFilterContext)(unsafe.Pointer(graph.filters))[:nb_filters:nb_filters]
+	nb_filters := self.graph.nb_filters
+	filters := (*[1 << 30]C.AVFilterContext)(unsafe.Pointer(self.graph.filters))[:nb_filters:nb_filters]
 
 	// fmt.Printf("filters: %+v\n", filters)
 	// fmt.Println("nb_filters", nb_filters)
@@ -491,9 +494,9 @@ func (self *FramerateConverter) configureFiltergraph(graph *C.AVFilterGraph, fil
 	}
 
 	// fmt.Printf("filters: %+v\n", filters)
-	// fmt.Printf("graph: %+v\n", graph)
+	// fmt.Printf("self.graph: %+v\n", self.graph)
 
-	ret = int(C.avfilter_graph_config(graph, C.NULL))
+	ret = int(C.avfilter_graph_config(self.graph, C.NULL))
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_config failed")
 	} else {
@@ -749,6 +752,8 @@ func (enc *VideoEncoder) Encode(img *VideoFrame) (pkts [][]byte, err error) {
 
 func (enc *VideoEncoder) Close() {
 	freeFFCtx(enc.ff)
+	enc.scaler.Close()
+	enc.framerateConverter.Close()
 }
 
 func (enc *VideoEncoder) SetPixelFormat(fmt av.PixelFormat) (err error) {
