@@ -125,8 +125,6 @@ type VideoScaler struct {
 	inHeight, OutHeight int
 	inYStride, OutYStride int
 	inCStride, OutCStride int
-	inFpsNum, OutFpsNum int
-	inFpsDen, OutFpsDen int
 	swsCtx *C.struct_SwsContext
 
 	outputImgPtrs [3]*C.uint8_t
@@ -218,69 +216,7 @@ func (self *VideoScaler) VideoScale(src *VideoFrame) (dst *VideoFrame, err error
 		}
 	}
 
-	if !self.framerateConverterReady {
-		err = self.ConfigureVideoFilters()
-		if err == nil {
-
-			fmt.Println("ConfigureVideoFilters ok")
-			self.framerateConverterReady = true
-		} else {
-			fmt.Println("ConfigureVideoFilters failed:", err)
-		}
-	}
-
-
 	dst, err = self.videoScaleOne(src)
-	var frame C.AVFrame
-
-	if /* TODO fps conv needed && */ self.framerateConverterReady {
-		var cret C.int
-
-		// VideoFrameAssignToFF(frame, ff.frame)
-		frame.format = C.int32_t(PixelFormatAV2FF(dst.GetPixelFormat()))
-
-		ys, cs := dst.GetStride()
-		frame.linesize[0] = C.int(ys)
-		frame.linesize[1] = C.int(cs)
-		frame.linesize[2] = C.int(cs)
-
-		w, h := dst.GetResolution()
-		frame.width = C.int(w)
-		frame.height = C.int(h)
-		frame.sample_aspect_ratio.num = 1 // TODO
-		frame.sample_aspect_ratio.den = 1
-
-		data0, data1, data2 := dst.GetDataPtr()
-		frame.data[0] = (*C.uchar)(data0)
-		frame.data[1] = (*C.uchar)(data1)
-		frame.data[2] = (*C.uchar)(data2)
-
-		frame.pts = C.int64_t(self.pts)
-		self.pts++
-
-		// fmt.Printf("\033[44m%+v\n\033[0m", frame)
-		// fmt.Printf("\033[44m%+v\n\033[0m", self.inVideoFilter)
-		// fmt.Printf("\033[44m%+v\n\033[0m", self.outVideoFilter)
-
-		cret = C.av_buffersrc_add_frame(self.inVideoFilter, &frame)
-
-		if int(cret) < 0 {
-			err = fmt.Errorf("av_buffersrc_add_frame failed")
-			fmt.Println(err)
-			return
-		}
-
-
-		cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, &frame, C.int(0))
-		if int(cret) < 0 {
-			if cret == C.AVERROR_EOF {
-				// is->viddec.finished = is->viddec.pkt_serial;
-				fmt.Println("finished !!!!!!")
-			}
-			// ret = 0;
-			// break;
-		}""
-	}
 	return
 }
 
