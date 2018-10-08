@@ -267,19 +267,16 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out *VideoFram
 		return
 	}
 
-
 	frame := C.av_frame_alloc()
 
-	cret = C.int(0)
-	for int(cret) >= 0 {
-		cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, frame, C.int(0))
-		if cret < 0 {
-			if cret == C.AVERROR_EOF {
-				fmt.Println("EOF")
-				cret = C.int(0)
-			}
-			break
+	// TODO fix for framerate upsampling
+	cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, frame, C.int(0))
+	if cret < 0 {
+		if cret == C.AVERROR_EOF {
+			fmt.Println("EOF")
+			cret = C.int(0)
 		}
+		return
 	}
 
 	if int(cret) != 0 {
