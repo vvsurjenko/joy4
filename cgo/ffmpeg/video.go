@@ -125,14 +125,8 @@ type VideoScaler struct {
 	inHeight, OutHeight int
 	inYStride, OutYStride int
 	inCStride, OutCStride int
-	inFpsNum, OutFpsNum int
-	inFpsDen, OutFpsDen int
 	swsCtx *C.struct_SwsContext
 
-	pts int
-	framerateConverterReady bool
-	inVideoFilter  *C.AVFilterContext // the first filter in the video chain
-	outVideoFilter *C.AVFilterContext // the last filter in the video chain
 	outputImgPtrs [3]*C.uint8_t
 }
 
@@ -220,70 +214,113 @@ func (self *VideoScaler) VideoScale(src *VideoFrame) (dst *VideoFrame, err error
 		}
 	}
 
-	if !self.framerateConverterReady {
+	dst, err = self.videoScaleOne(src)
+	return
+}
+
+type FramerateConverter struct {
+	inPixelFormat, OutPixelFormat av.PixelFormat
+	inWidth, OutWidth int
+	inHeight, OutHeight int
+	inFpsNum, OutFpsNum int
+	inFpsDen, OutFpsDen int
+	
+	pts int
+	ready bool
+	inVideoFilter  *C.AVFilterContext // the first filter in the video chain
+	outVideoFilter *C.AVFilterContext // the last filter in the video chain
+	outputImgPtrs [3]*C.uint8_t
+}
+
+func (self *FramerateConverter) Close() {
+	// TODO
+}
+
+func (self *FramerateConverter) FreeOutputImage() {
+	if self != nil {
+		C.free(unsafe.Pointer(self.outputImgPtrs[0]))
+		C.free(unsafe.Pointer(self.outputImgPtrs[1]))
+		C.free(unsafe.Pointer(self.outputImgPtrs[2]))
+		self.outputImgPtrs[0]= nil
+		self.outputImgPtrs[1]= nil
+		self.outputImgPtrs[2]= nil
+	}
+}
+
+func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out *VideoFrame, err error){
+	if !self.ready {
 		err = self.ConfigureVideoFilters()
 		if err == nil {
 
 			fmt.Println("ConfigureVideoFilters ok")
-			self.framerateConverterReady = true
+			self.ready = true
 		} else {
 			fmt.Println("ConfigureVideoFilters failed:", err)
 		}
 	}
 
+	if !self.ready {
+		return
+	}
+	var cret C.int
 
-	dst, err = self.videoScaleOne(src)
-	var frame C.AVFrame
+	out					= &VideoFrame{}
+	out.frame			= &C.AVFrame{} // TODO deep copy input to keep frame properties
+	out.Image.YStride	= in.Image.YStride
+	out.Image.CStride	= in.Image.CStride
+	out.Image.Rect		= in.Image.Rect
 
-	if /* TODO fps conv needed && */ self.framerateConverterReady {
-		var cret C.int
+	out.frame.linesize[0] = in.frame.linesize[0]
+	out.frame.linesize[1] = in.frame.linesize[1]
+	out.frame.linesize[2] = in.frame.linesize[2]
 
-		frame.format = dst.frame.format
+	out.frame.width = in.frame.width
+	out.frame.height = in.frame.width
+	out.frame.format = in.frame.format
+	out.frame.sample_aspect_ratio.num = in.frame.sample_aspect_ratio.num
+	out.frame.sample_aspect_ratio.den = in.frame.sample_aspect_ratio.den
 
-		frame.linesize[0] = C.int(dst.Image.YStride)
-		frame.linesize[1] = C.int(dst.Image.CStride)
-		frame.linesize[2] = C.int(dst.Image.CStride)
+	// TODO 420 only
+	lsize := out.Image.YStride * out.Height()
+	csize := out.Image.CStride * out.Height()
 
-		frame.width = C.int(dst.Width())
-		frame.height = C.int(dst.Height())
-		frame.sample_aspect_ratio.num = 0 // TODO
-		frame.sample_aspect_ratio.den = 1
+	out.frame.data[0] = (*C.uint8_t)(C.malloc(C.size_t(lsize)))
+	out.frame.data[1] = (*C.uint8_t)(C.malloc(C.size_t(csize)))
+	out.frame.data[2] = (*C.uint8_t)(C.malloc(C.size_t(csize)))
 
-		frame.data[0] = (*C.uchar)(unsafe.Pointer(&dst.Image.Y[0]))
-		frame.data[1] = (*C.uchar)(unsafe.Pointer(&dst.Image.Cb[0]))
-		frame.data[2] = (*C.uchar)(unsafe.Pointer(&dst.Image.Cr[0]))
+	out.Image.Y			= fromCPtr(unsafe.Pointer(out.frame.data[0]), lsize)
+	out.Image.Cb		= fromCPtr(unsafe.Pointer(out.frame.data[1]), csize)
+	out.Image.Cr		= fromCPtr(unsafe.Pointer(out.frame.data[2]), csize)
 
-		frame.pts = C.int64_t(self.pts)
-		self.pts++
+	self.outputImgPtrs[0] = out.frame.data[0]
+	self.outputImgPtrs[1] = out.frame.data[1]
+	self.outputImgPtrs[2] = out.frame.data[2]
 
-		// fmt.Printf("\033[44m%+v\n\033[0m", frame)
-		// fmt.Printf("\033[44m%+v\n\033[0m", self.inVideoFilter)
-		// fmt.Printf("\033[44m%+v\n\033[0m", self.outVideoFilter)
+	out.frame.pts = C.int64_t(self.pts)
+	self.pts++
 
-		cret = C.av_buffersrc_add_frame(self.inVideoFilter, &frame)
+	cret = C.av_buffersrc_add_frame(self.inVideoFilter, out.frame)
 
-		if int(cret) < 0 {
-			err = fmt.Errorf("av_buffersrc_add_frame failed")
-			fmt.Println(err)
-			return
+	if int(cret) < 0 {
+		err = fmt.Errorf("av_buffersrc_add_frame failed")
+		fmt.Println(err)
+		return
+	}
+
+	cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, out.frame, C.int(0))
+	if int(cret) < 0 {
+		if cret == C.AVERROR_EOF {
+			// is->viddec.finished = is->viddec.pkt_serial;
+			fmt.Println("finished !!!!!!")
 		}
-
-
-		cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, &frame, C.int(0))
-		if int(cret) < 0 {
-			if cret == C.AVERROR_EOF {
-				// is->viddec.finished = is->viddec.pkt_serial;
-				fmt.Println("finished !!!!!!")
-			}
-			// ret = 0;
-			// break;
-		}
+		// ret = 0;
+		// break;
 	}
 	return
 }
 
 // static int configure_video_filters()
-func (self *VideoScaler) ConfigureVideoFilters() (err error) {
+func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	var ret int
 	var filt_src, filt_out, last_filter *C.AVFilterContext
 	var graph *C.struct_AVFilterGraph = C.avfilter_graph_alloc() // TODO free
@@ -377,7 +414,7 @@ func (self *VideoScaler) ConfigureVideoFilters() (err error) {
 
 // Note: this func adds a filter before the lastly added filter, so the
 // processing order of the filters is in reverse
-func (self *VideoScaler) AddFilter(graph *C.AVFilterGraph, first_filter *C.AVFilterContext, last_filter *C.AVFilterContext, name string, arg string) (err error){
+func (self *FramerateConverter) AddFilter(graph *C.AVFilterGraph, first_filter *C.AVFilterContext, last_filter *C.AVFilterContext, name string, arg string) (err error){
 	var ret int
 	var filt_ctx *C.AVFilterContext
 
@@ -411,8 +448,7 @@ func (self *VideoScaler) AddFilter(graph *C.AVFilterGraph, first_filter *C.AVFil
 	return
 }
 
-
-func (self *VideoScaler) configureFiltergraph(graph *C.AVFilterGraph, filtergraph *C.char, source_ctx *C.AVFilterContext, sink_ctx *C.AVFilterContext) (err error){
+func (self *FramerateConverter) configureFiltergraph(graph *C.AVFilterGraph, filtergraph *C.char, source_ctx *C.AVFilterContext, sink_ctx *C.AVFilterContext) (err error){
 	var inputs, outputs *C.AVFilterInOut
 
 	nb_filters_init := graph.nb_filters 
@@ -485,10 +521,6 @@ func (self *VideoScaler) configureFiltergraph(graph *C.AVFilterGraph, filtergrap
 	return
 }
 
-
-// TODO VideoConverter type
-
-
 // VideoEncoder contains all params that must be set by user to initialize the video encoder
 type VideoEncoder struct {
 	ff *ffctx
@@ -502,6 +534,7 @@ type VideoEncoder struct {
 	codecDataInitialised bool
 	pts int64
 	scaler *VideoScaler
+	framerateConverter *FramerateConverter
 	bm av.BitrateMeasure
 }
 
@@ -659,18 +692,35 @@ func (self *VideoEncoder) scale(img *VideoFrame) (out *VideoFrame, err error) {
 			inHeight:		img.Image.Rect.Dy(),
 			inYStride:		img.Image.YStride,
 			inCStride:		img.Image.CStride,
-			inFpsNum:		img.Framerate.Num,
-			inFpsDen:		img.Framerate.Den,
 			OutPixelFormat:	self.pixelFormat,
 			OutWidth:		self.width,
 			OutHeight:		self.height,
 			OutYStride:		self.width,
 			OutCStride:		self.width/self.pixelFormat.HorizontalSubsampleRatio(),
+		}
+	}
+	if out, err = self.scaler.VideoScale(img); err != nil {
+		return
+	}
+	return
+}
+
+func (self *VideoEncoder) convertFramerate(img *VideoFrame) (out *VideoFrame, err error) {
+	if self.framerateConverter == nil {
+		self.framerateConverter = &FramerateConverter{
+			inPixelFormat:	PixelFormatFF2AV(int32(img.frame.format)),
+			inWidth:		img.Image.Rect.Dx(),
+			inHeight:		img.Image.Rect.Dy(),
+			inFpsNum:		img.Framerate.Num,
+			inFpsDen:		img.Framerate.Den,
+			OutPixelFormat:	self.pixelFormat,
+			OutWidth:		self.width,
+			OutHeight:		self.height,
 			OutFpsNum:		self.fpsNum,
 			OutFpsDen:		self.fpsDen,
 		}
 	}
-	if out, err = self.scaler.VideoScale(img); err != nil {
+	if out, err = self.framerateConverter.ConvertFramerate(img); err != nil {
 		return
 	}
 	return
@@ -687,7 +737,19 @@ func (enc *VideoEncoder) Encode(img *VideoFrame) (pkts [][]byte, err error) {
 		}
 	}
 
+	imgFps := float64(img.Framerate.Num) / float64(img.Framerate.Den)
+	encFps := float64(enc.fpsNum) / float64(enc.fpsDen)
+
+	if imgFps != encFps {
+		if img, err = enc.convertFramerate(img); err != nil {
+			enc.scaler.FreeOutputImage()
+			return nil, err
+		}
+	}
+
 	if gotpkt, pkt, err = enc.encodeOne(img); err != nil {
+		enc.scaler.FreeOutputImage()
+		enc.framerateConverter.FreeOutputImage()
 		return nil, err
 	}
 	if gotpkt {
@@ -695,6 +757,7 @@ func (enc *VideoEncoder) Encode(img *VideoFrame) (pkts [][]byte, err error) {
 	}
 
 	enc.scaler.FreeOutputImage()
+	enc.framerateConverter.FreeOutputImage()
 	return
 }
 
