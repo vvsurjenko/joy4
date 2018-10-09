@@ -288,21 +288,21 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out *VideoFram
 		return
 	}
 
+	lsize := frame.linesize[0] * frame.height
+	csize := frame.linesize[1] * frame.height
+
 	out					= &VideoFrame{}
 	out.frame			= frame
+	self.outputFrame	= frame
+
+	out.Image.Y			= fromCPtr(unsafe.Pointer(out.frame.data[0]), int(lsize))
+	out.Image.Cb		= fromCPtr(unsafe.Pointer(out.frame.data[1]), int(csize))
+	out.Image.Cr		= fromCPtr(unsafe.Pointer(out.frame.data[2]), int(csize))
 	out.Image.YStride	= in.Image.YStride
 	out.Image.CStride	= in.Image.CStride
 	out.Image.Rect		= in.Image.Rect
-
-	lsize := out.frame.linesize[0] * out.frame.height
-	csize := out.frame.linesize[1] * out.frame.height
-
-	out.Image.Y		= fromCPtr(unsafe.Pointer(out.frame.data[0]), int(lsize))
-	out.Image.Cb	= fromCPtr(unsafe.Pointer(out.frame.data[1]), int(csize))
-	out.Image.Cr	= fromCPtr(unsafe.Pointer(out.frame.data[2]), int(csize))
 	out.Framerate.Num	= self.OutFpsNum
 	out.Framerate.Den	= self.OutFpsDen
-	self.outputFrame = out.frame
 	return
 }
 
