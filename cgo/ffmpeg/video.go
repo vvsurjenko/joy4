@@ -393,7 +393,7 @@ func (self *FramerateConverter) AddFilter(first_filter *C.AVFilterContext, last_
 	strname := C.CString(name)
 	defer C.free(unsafe.Pointer(strname))
 
-	strprefix := C.CString("ffplay_")
+	strprefix := C.CString("fpsconv")
 	defer C.free(unsafe.Pointer(strprefix))
 
 	strarg := C.CString(arg)
