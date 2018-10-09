@@ -198,9 +198,9 @@ func FindVideoCodec(stream av.VideoCodecData, i int) (need bool, dec *ffmpeg.Vid
 	}
 
 	// Encoder config
-	FpsNum := 25000
-	FpsDen := 1000
 	// Configurable (can be set from input stream, or set by user and the input video will be converted before encoding)
+	FpsNum := 18000
+	FpsDen := 1000
 	enc.SetFramerate(FpsNum, FpsDen)
 	enc.SetResolution(640, 480)
 	enc.SetPixelFormat(av.I420)
