@@ -323,8 +323,8 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	// Input filter config
 	buffersrc_args := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:frame_rate=%d/%d",
 		self.inWidth, self.inHeight, C.int32_t(PixelFormatAV2FF(self.inPixelFormat)),
-		self.OutFpsDen, self.OutFpsNum, 1, 1, // sar num,  max(sar denom, 1)
-		self.OutFpsNum, self.OutFpsDen)
+		self.inFpsDen, self.inFpsNum, 1, 1, // sar num,  max(sar denom, 1)
+		self.inFpsNum, self.inFpsDen)
 
 	fmt.Printf("\033[44m%+v\n\033[0m", buffersrc_args)
 	cbuffersrc_args := C.CString(buffersrc_args)
