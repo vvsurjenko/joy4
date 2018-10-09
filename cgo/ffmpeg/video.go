@@ -300,7 +300,8 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out *VideoFram
 	out.Image.Y		= fromCPtr(unsafe.Pointer(out.frame.data[0]), int(lsize))
 	out.Image.Cb	= fromCPtr(unsafe.Pointer(out.frame.data[1]), int(csize))
 	out.Image.Cr	= fromCPtr(unsafe.Pointer(out.frame.data[2]), int(csize))
-
+	out.Framerate.Num	= self.OutFpsNum
+	out.Framerate.Den	= self.OutFpsDen
 	self.outputFrame = out.frame
 	return
 }
@@ -370,7 +371,7 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 
 	last_filter = filt_out;
 
-	filterarg := fmt.Sprintf("fps=%d/%d", 12000, 1000)
+	filterarg := fmt.Sprintf("fps=%d/%d", self.OutFpsNum, self.OutFpsDen)
 	fmt.Printf("\033[45m%+v\n\033[0m", filterarg)
 	self.AddFilter(filt_src, last_filter, "framerate", filterarg)
 	ret = int(C.avfilter_graph_config(self.graph, C.NULL))
