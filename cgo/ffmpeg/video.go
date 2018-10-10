@@ -231,7 +231,7 @@ type FramerateConverter struct {
 	graph *C.struct_AVFilterGraph
 	inVideoFilter  *C.AVFilterContext // the first filter in the video chain
 	outVideoFilter *C.AVFilterContext // the last filter in the video chain
-	outputFrame *C.AVFrame
+	outputFrames []*C.AVFrame
 }
 
 func (self *FramerateConverter) Close() {
@@ -240,14 +240,18 @@ func (self *FramerateConverter) Close() {
 	}
 }
 
-func (self *FramerateConverter) FreeOutputImage() {
+func (self *FramerateConverter) FreeOutputImage(idx int) {
 	if self != nil {
-		C.av_frame_free(&self.outputFrame)
-		self.outputFrame = nil
+		if idx < len(self.outputFrames) {
+			if self.outputFrames[idx] != nil {
+				C.av_frame_free(&self.outputFrames[idx])
+			}
+			self.outputFrames = self.outputFrames[:idx+copy(self.outputFrames[idx:], self.outputFrames[idx+1:])]
+		}
 	}
 }
 
-func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out *VideoFrame, err error){
+func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFrame, err error){
 	if self.graph == nil {
 		err = self.ConfigureVideoFilters()
 		if err == nil {
@@ -270,39 +274,34 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out *VideoFram
 		return
 	}
 
-	frame := C.av_frame_alloc()
-
-	// TODO fix for framerate upsampling
-	cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, frame, C.int(0))
-	if cret < 0 {
-		if cret == C.AVERROR_EOF {
-			fmt.Println("EOF")
-			cret = C.int(0)
+	for int(cret) == 0 {
+		frame := C.av_frame_alloc()
+		cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, frame, C.int(0))
+		if cret < 0 {
+			if cret == C.AVERROR_EOF {
+				fmt.Println("EOF")
+			}
+			C.av_frame_free(&frame)
+			break
 		}
-		return
+
+		lsize := frame.linesize[0] * frame.height
+		csize := frame.linesize[1] * frame.height
+
+		f					:= &VideoFrame{}
+		f.frame				= frame
+		self.outputFrames	= append(self.outputFrames, frame)
+
+		f.Image.Y			= fromCPtr(unsafe.Pointer(frame.data[0]), int(lsize))
+		f.Image.Cb			= fromCPtr(unsafe.Pointer(frame.data[1]), int(csize))
+		f.Image.Cr			= fromCPtr(unsafe.Pointer(frame.data[2]), int(csize))
+		f.Image.YStride		= int(frame.linesize[0])
+		f.Image.CStride		= int(frame.linesize[1])
+		f.Image.Rect		= in.Image.Rect
+		f.Framerate.Num		= self.OutFpsNum
+		f.Framerate.Den		= self.OutFpsDen
+		out = append(out, f)
 	}
-
-	if int(cret) != 0 {
-		// no frame yet
-		C.av_frame_free(&frame)
-		return
-	}
-
-	lsize := frame.linesize[0] * frame.height
-	csize := frame.linesize[1] * frame.height
-
-	out					= &VideoFrame{}
-	out.frame			= frame
-	self.outputFrame	= frame
-
-	out.Image.Y			= fromCPtr(unsafe.Pointer(out.frame.data[0]), int(lsize))
-	out.Image.Cb		= fromCPtr(unsafe.Pointer(out.frame.data[1]), int(csize))
-	out.Image.Cr		= fromCPtr(unsafe.Pointer(out.frame.data[2]), int(csize))
-	out.Image.YStride	= in.Image.YStride
-	out.Image.CStride	= in.Image.CStride
-	out.Image.Rect		= in.Image.Rect
-	out.Framerate.Num	= self.OutFpsNum
-	out.Framerate.Den	= self.OutFpsDen
 	return
 }
 
@@ -604,7 +603,7 @@ func (self *VideoEncoder) scale(img *VideoFrame) (out *VideoFrame, err error) {
 	return
 }
 
-func (self *VideoEncoder) convertFramerate(img *VideoFrame) (out *VideoFrame, err error) {
+func (self *VideoEncoder) convertFramerate(img *VideoFrame) (out []*VideoFrame, err error) {
 	if self.framerateConverter == nil {
 		self.framerateConverter = &FramerateConverter{
 			inPixelFormat:	PixelFormatFF2AV(int32(img.frame.format)),
@@ -635,33 +634,38 @@ func (enc *VideoEncoder) Encode(img *VideoFrame) (pkts [][]byte, err error) {
 	imgFps := float64(img.Framerate.Num) / float64(img.Framerate.Den)
 	encFps := float64(enc.fpsNum) / float64(enc.fpsDen)
 
+	var frames []*VideoFrame
 	if imgFps != encFps {
-		if img, err = enc.convertFramerate(img); err != nil {
+		if frames, err = enc.convertFramerate(img); err != nil {
 			return nil, err
 		}
-		if img == nil {
+		if frames == nil || len(frames) == 0 {
 			return
 		}
+	} else {
+		frames = append(frames, img)
 	}
 
-	if PixelFormatFF2AV(int32(img.frame.format)) != enc.pixelFormat || img.Width() != enc.width || img.Height() != enc.height {
-		if img, err = enc.scale(img); err != nil {
-			enc.framerateConverter.FreeOutputImage()
+	for idx, f := range frames {
+		if PixelFormatFF2AV(int32(f.frame.format)) != enc.pixelFormat || f.Width() != enc.width || f.Height() != enc.height {
+			if f, err = enc.scale(f); err != nil {
+				enc.framerateConverter.FreeOutputImage(idx)
+				return nil, err
+			}
+		}
+
+		if gotpkt, pkt, err = enc.encodeOne(f); err != nil {
+			enc.scaler.FreeOutputImage()
+			enc.framerateConverter.FreeOutputImage(idx)
 			return nil, err
 		}
-	}
+		if gotpkt {
+			pkts = append(pkts, pkt)
+		}
 
-	if gotpkt, pkt, err = enc.encodeOne(img); err != nil {
 		enc.scaler.FreeOutputImage()
-		enc.framerateConverter.FreeOutputImage()
-		return nil, err
+		enc.framerateConverter.FreeOutputImage(idx)
 	}
-	if gotpkt {
-		pkts = append(pkts, pkt)
-	}
-
-	enc.scaler.FreeOutputImage()
-	enc.framerateConverter.FreeOutputImage()
 	return
 }
 
