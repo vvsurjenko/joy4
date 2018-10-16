@@ -7,6 +7,7 @@ import (
 	"github.com/nareix/joy4/utils/bits/pio"
 	"fmt"
 	"bytes"
+	"time"
 )
 
 const (
@@ -290,6 +291,40 @@ func SplitNALUs(b []byte) (nalus [][]byte, typ int) {
 	return [][]byte{b}, NALU_RAW
 }
 
+// PktToCodecData parses NAL units to find SPS and PPS, and derive codec data from them. h264CodecData can be nil if the SPS and/or PPS is not found
+func PktToCodecData(pkt av.Packet) (h264CodecData av.CodecData, err error) {
+	h264CodecData = nil
+	err = nil
+	if pkt.IsKeyFrame {
+		var sps, pps []byte
+		nalus, _ := SplitNALUs(pkt.Data)
+
+		for _, nalu := range nalus {
+			if len(nalu) > 0 {
+				naltype := nalu[0] & 0x1f
+				switch {
+				case naltype == 7:
+					sps = nalu
+				case naltype == 8:
+					pps = nalu
+				}
+			}
+		}
+
+		if len(sps) > 0 && len(pps) > 0 {
+			h264CodecData, err = NewCodecDataFromSPSAndPPS(sps, pps)
+			if err != nil {
+				h264CodecData = nil
+				return
+			}
+		} else {
+			err = fmt.Errorf("h264parser: empty sps and/or pps")
+			return
+		}
+	}
+	return
+}
+
 type SPSInfo struct {
 	ProfileIdc uint
 	LevelIdc   uint
@@ -304,9 +339,38 @@ type SPSInfo struct {
 
 	Width  uint
 	Height uint
+
+	FpsNum uint
+	FpsDen uint
+}
+
+
+func cleanupEmulationPrevention(data []byte) (dataOut []byte) {
+	dataOut = make([]byte, len(data))
+	var rdIdx, wrIdx int
+ 	for ; rdIdx<len(data); rdIdx++ {
+		// Read one byte
+		dataOut[wrIdx] = data[rdIdx]
+		// Check if the next 32 bits match 0x00000300, 0x00000301, 0x00000302, 0x00000303
+		if data[rdIdx] == 0 && rdIdx+3 < len(data) {
+			if data[rdIdx+1] == 0 && data[rdIdx+2] == 3 && (data[rdIdx+3] >= 0 && data[rdIdx+3] < 4) {
+				// Copy byte at rdIdx+1 (0x00)
+				rdIdx++
+				wrIdx++
+				dataOut[wrIdx] = data[rdIdx]
+				// Skip byte at rdIdx+2 (0x03)
+				rdIdx++
+			}
+		}
+		wrIdx++
+	}
+	return dataOut
 }
 
 func ParseSPS(data []byte) (self SPSInfo, err error) {
+	data = cleanupEmulationPrevention(data)
+
+
 	r := &bits.GolombBitReader{R: bytes.NewReader(data)}
 
 	if _, err = r.ReadBits(8); err != nil {
@@ -492,6 +556,117 @@ func ParseSPS(data []byte) (self SPSInfo, err error) {
 		}
 	}
 
+	// vui_parameters_present_flag
+	var vui_parameters_present_flag uint
+	if vui_parameters_present_flag, err = r.ReadBit(); err != nil {
+		return
+	}
+	if vui_parameters_present_flag != 0 {
+		var aspect_ratio_info_present_flag uint
+		if aspect_ratio_info_present_flag, err = r.ReadBit(); err != nil {
+			return
+		}
+		if aspect_ratio_info_present_flag != 0 {
+			var aspect_ratio_idc uint
+			if aspect_ratio_idc, err = r.ReadBits(8); err != nil {
+				return
+			}
+			if aspect_ratio_idc == 255 {
+				// sar_width
+				if _, err = r.ReadBits(16); err != nil {
+					return
+				}
+				// sar_height
+				if _, err = r.ReadBits(16); err != nil {
+					return
+				}
+			}
+		}
+
+		var overscan_info_present_flag uint
+		if overscan_info_present_flag, err = r.ReadBit(); err != nil {
+			return
+		}
+		if overscan_info_present_flag != 0 {
+			// overscan_appropriate_flag
+			if _, err = r.ReadBit(); err != nil {
+				return
+			}
+		}
+
+		var video_signal_type_present_flag uint
+		if video_signal_type_present_flag, err = r.ReadBit(); err != nil {
+			return
+		}
+		if video_signal_type_present_flag != 0 {
+			// video_format
+			if _, err = r.ReadBits(3); err != nil {
+				return
+			}
+			// video_full_range_flag
+			if _, err = r.ReadBit(); err != nil {
+				return
+			}
+
+			var colour_description_present_flag uint
+			if colour_description_present_flag, err = r.ReadBit(); err != nil {
+				return
+			}
+			if colour_description_present_flag != 0 {
+				// colour_primaries
+				if _, err = r.ReadBits(8); err != nil {
+					return
+				}
+				// transfer_characteristics
+				if _, err = r.ReadBits(8); err != nil {
+					return
+				}
+				// matrix_coefficients
+				if _, err = r.ReadBits(8); err != nil {
+					return
+				}
+			}
+		}
+
+		var chroma_loc_info_present_flag uint
+		if chroma_loc_info_present_flag, err = r.ReadBit(); err != nil {
+			return
+		}
+		if chroma_loc_info_present_flag != 0 {
+			// chroma_sample_loc_type_top_field
+			if _, err = r.ReadExponentialGolombCode(); err != nil {
+				return
+			}
+			// chroma_sample_loc_type_bottom_field
+			if _, err = r.ReadExponentialGolombCode(); err != nil {
+				return
+			}
+		}
+
+		var timing_info_present_flag uint
+		if timing_info_present_flag, err = r.ReadBit(); err != nil {
+			return
+		}
+		if timing_info_present_flag != 0 {
+			var num_units_in_tick uint
+			if num_units_in_tick, err = r.ReadBits(32); err != nil {
+				return
+			}
+
+			var time_scale uint
+			if time_scale, err = r.ReadBits(32); err != nil {
+				return
+			}
+
+			if _, err = r.ReadBit(); err != nil {
+				return
+			}
+
+			self.FpsNum = time_scale
+			self.FpsDen = 2 * num_units_in_tick
+		}
+	}
+
 	self.Width = (self.MbWidth * 16) - self.CropLeft*2 - self.CropRight*2
 	self.Height = ((2 - frame_mbs_only_flag) * self.MbHeight * 16) - self.CropTop*2 - self.CropBottom*2
 
@@ -526,6 +701,20 @@ func (self CodecData) Width() int {
 
 func (self CodecData) Height() int {
 	return int(self.SPSInfo.Height)
+}
+
+func (self CodecData) Framerate() (int, int) {
+	return int(self.SPSInfo.FpsNum), int(self.SPSInfo.FpsDen)
+}
+
+func (self CodecData) PacketDuration([]byte) (dur time.Duration, err error) {
+	fpsNum, fpsDen := self.Framerate()
+	if fpsNum <= 0 || fpsDen <= 0 {
+		err = fmt.Errorf("invalid framerate: %d/%d", fpsNum, fpsDen)
+		return
+	}
+	dur = (time.Second * time.Duration(fpsDen)) / time.Duration(fpsNum)
+	return
 }
 
 func NewCodecDataFromAVCDecoderConfRecord(record []byte) (self CodecData, err error) {

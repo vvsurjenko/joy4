@@ -181,6 +181,8 @@ type VideoCodecData interface {
 	CodecData
 	Width() int // Video height
 	Height() int // Video width
+	Framerate() (int, int) // Video FPS num and denom
+	PacketDuration([]byte) (time.Duration, error) // get video compressed packet duration
 }
 
 type AudioCodecData interface {
@@ -314,3 +316,113 @@ type AudioResampler interface {
 	Resample(AudioFrame) (AudioFrame, error) // convert raw audio frames
 }
 
+// Video frame format.
+type PixelFormat uint8
+
+const (
+	// Planar formats
+	I420 = PixelFormat(iota + 1) // 4:2:0 8 bit, 12 bpp. Y plane followed by 8 bit 2x2 subsampled U and V planes
+	NV12 // 4:2:0 8 bit, 12 bpp. Y plane followed by an interleaved U/V plane with 2x2 subsampling
+	NV21 // 4:2:0 8 bit, 12 bpp. As NV12 with U and V reversed in the interleaved plane
+	//YV12 // 4:2:0 8 bit, 12 bpp. Y plane followed by 8 bit 2x2 subsampled V and U planes
+
+	// Packed formats
+	UYVY // 4:2:2 8-bit, 16 bpp. YUV (Y sample at every pixel, U and V sampled at every second pixel horizontally on each line). A macropixel contains 2 pixels in 1 u_int32.
+	//YUY2 // 4:2:2 8-bit, 16 bpp. Same as UYVY but with different component ordering within the u_int32 macropixel.
+	YUYV // 4:2:2 8-bit, 16 bpp as for UYVY but with different component ordering within the u_int32 macropixel.
+	//V210 // 4:2:2 10-bit, 32 bpp. YCrCb equivalent to the Quicktime format of the same name.
+)
+
+// BytesPerPixel returns the number of bytes (rounded up) used by a pixel in a given format
+func (pixFmt PixelFormat) BytesPerPixel() int {
+	switch pixFmt {
+	case I420, NV12, NV21, UYVY, YUYV:
+		return 2
+	default:
+		return 0
+	}
+}
+
+func (pixFmt PixelFormat) String() string {
+	switch pixFmt {
+	case I420:
+		return "I420"
+	case NV12:
+		return "NV12"
+	case NV21:
+		return "NV21"
+	case UYVY:
+		return "UYVY"
+	case YUYV:
+		return "YUYV"
+	default:
+		return "?"
+	}
+}
+
+// IsPlanar return true if this pixel format is planar.
+func (pixFmt PixelFormat) IsPlanar() bool {
+	switch pixFmt {
+	case I420, NV12, NV21:
+		return true
+	default:
+		return false
+	}
+}
+
+// HorizontalSubsampleRatio returns the ratio of Y bytes over U or V bytes in a row of pixels
+func (pixFmt PixelFormat) HorizontalSubsampleRatio() int {
+	switch pixFmt {
+	case I420, NV12, NV21, UYVY, YUYV:
+		return 2
+	}
+	return -1
+}
+
+// VerticalSubsampleRatio returns the ratio of Y bytes over U or V bytes in a column of pixels
+func (pixFmt PixelFormat) VerticalSubsampleRatio() int {
+	switch pixFmt {
+	case I420, NV12, NV21:
+		return 2
+	case UYVY, YUYV:
+		return 1
+	}
+	return -1
+}
+
+// Video scanning mode.
+type ScanningMode uint8
+const (
+	Progressive = ScanningMode(iota + 1)
+	InterlacedTFF // Top Field First
+	InterlacedBFF // Bottom Field First
+)
+
+
+type BitrateMeasure struct {
+	lastPrint time.Time
+	sumBytes int
+	AvgKbps int
+}
+
+func (bm *BitrateMeasure) Measure(size int) (measureReady bool, bitrateKbps int) {
+	bm.sumBytes += size
+	now := time.Now()
+	if bm.lastPrint.IsZero() {
+		bm.lastPrint = now
+	} else {
+		diff := now.Sub(bm.lastPrint)
+		if diff > 3*time.Second {
+			bitrate := (8 * bm.sumBytes) / int(1000 * diff.Seconds())
+			bm.sumBytes = 0
+			bm.lastPrint = now
+			if bm.AvgKbps == 0 {
+				bm.AvgKbps = bitrate
+			} else {
+				bm.AvgKbps = (bm.AvgKbps + bitrate)/2
+			}
+			return true, bitrate
+		}
+	}
+	return false, 0
+}
