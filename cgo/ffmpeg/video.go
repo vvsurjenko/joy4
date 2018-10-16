@@ -247,7 +247,7 @@ func (enc *VideoEncoder) Setup() (err error) {
 	// over which the bitrate is controlled. By setting size = max * 2, we give
 	// a window of 2 seconds to mitigate the effects of bitrate peaks on the 
 	// overall quality
-	ff.codecCtx.rc_max_rate		= C.int64_t(enc.Bitrate * 1000)
+	ff.codecCtx.rc_max_rate		= C.int64_t(enc.Bitrate)
 	ff.codecCtx.rc_buffer_size	= C.int(ff.codecCtx.rc_max_rate * 2)
 
 	if C.avcodec_open2(ff.codecCtx, ff.codec, &ff.options) != 0 {
