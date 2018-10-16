@@ -339,10 +339,11 @@ func (enc *VideoEncoder) encodeOne(img *VideoFrame) (gotpkt bool, pkt []byte, er
 		fmt.Println("ffmpeg: no pkt !")
 	}
 
-	if ok, kbps := enc.bm.Measure(len(avpkt.Data)); ok {
-		fmt.Println("Encoded video bitrate (kbps):", kbps)
+	if debug {
+		if ok, kbps := enc.bm.Measure(len(avpkt.Data)); ok {
+			fmt.Println("Encoded video bitrate (kbps):", kbps)
+		}
 	}
-
 	return gotpkt, avpkt.Data, err
 }
 
