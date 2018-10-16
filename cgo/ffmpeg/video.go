@@ -289,8 +289,7 @@ func (enc *VideoEncoder) encodeOne(img *VideoFrame) (gotpkt bool, pkt []byte, er
 	ff.frame.sample_aspect_ratio.num = 0 // TODO
 	ff.frame.sample_aspect_ratio.den = 1
 
-	// Increase pts and convert in 90k: pts * 90000 / fps
-	ff.frame.pts = C.int64_t( int(enc.pts) * enc.fpsDen * 90000 / enc.fpsNum)
+	ff.frame.pts = C.longlong(enc.pts)
 	enc.pts++
 
 	cerr := C.avcodec_encode_video2(ff.codecCtx, &cpkt, ff.frame, &cgotpkt)
