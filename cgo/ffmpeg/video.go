@@ -226,6 +226,9 @@ func (enc *VideoEncoder) Setup() (err error) {
 	}
 
 
+	if err = enc.SetOption("preset", "ultrafast"); err != nil {
+		return
+	}
 	if err = enc.SetOption("crf", "23"); err != nil {
 		return
 	}
