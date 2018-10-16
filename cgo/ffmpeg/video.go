@@ -226,6 +226,10 @@ func (enc *VideoEncoder) Setup() (err error) {
 	}
 
 
+	if err = enc.SetOption("crf", "23"); err != nil {
+		return
+	}
+
 	// All the following params are described in ffmpeg: avcodec.h, in struct AVCodecContext
 	ff.codecCtx.width			= C.int(enc.width)
 	ff.codecCtx.height			= C.int(enc.height)
@@ -234,9 +238,16 @@ func (enc *VideoEncoder) Setup() (err error) {
 	ff.codecCtx.time_base.num	= C.int(enc.fpsDen)
 	ff.codecCtx.time_base.den	= C.int(enc.fpsNum)
 	ff.codecCtx.gop_size		= C.int(enc.gopSize)
-	ff.codecCtx.bit_rate		= C.int64_t(enc.Bitrate)
 
-	if C.avcodec_open2(ff.codecCtx, ff.codec, nil) != 0 {
+	// Use VBV for rate control.
+	// rc_max_rate is the target bitrate, and rc_buffer_size is the time window
+	// over which the bitrate is controlled. By setting size = max * 2, we give
+	// a window of 2 seconds to mitigate the effects of bitrate peaks on the 
+	// overall quality
+	ff.codecCtx.rc_max_rate		= C.int64_t(enc.Bitrate * 1000)
+	ff.codecCtx.rc_buffer_size	= C.int(ff.codecCtx.rc_max_rate * 2)
+
+	if C.avcodec_open2(ff.codecCtx, ff.codec, &ff.options) != 0 {
 		err = fmt.Errorf("ffmpeg: encoder: avcodec_open2 failed")
 		return
 	}
