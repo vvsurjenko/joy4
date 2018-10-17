@@ -13,21 +13,6 @@ int wrap_av_opt_set_int_list(void* obj, const char* name, void* val, int64_t ter
 	return av_opt_set_bin(obj, name, (const uint8_t *)(val), av_int_list_length(val, term) * sizeof(*(val)), flags);
 }
 
-void free_filters_io(AVFilterContext* f) {
-	for(int i=0; i<f->nb_inputs;i++) {
-		if(f->inputs[i]) {
-			free(f->inputs[i]);
-			f->inputs[i] = NULL;
-		}
-	}
-	for(int i=0; i<f->nb_outputs;i++) {
-		if(f->outputs[i]) {
-			free(f->outputs[i]);
-			f->outputs[i] = NULL;
-		}
-	}
-}
-
 	#cgo pkg-config: libavfilter
 	#include <libavfilter/avfilter.h>
 */
@@ -248,7 +233,7 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFr
 	if self.graph == nil {
 		err = self.ConfigureVideoFilters()
 		if err == nil {
-			fmt.Println("ConfigureVideoFilters ok")
+			fmt.Printf("ConfigureVideoFilters ok: %d/%d to %d/%d\n", self.inFpsNum, self.inFpsDen, self.OutFpsNum, self.OutFpsDen)
 		} else {
 			fmt.Println("ConfigureVideoFilters failed:", err)
 		}
@@ -298,7 +283,6 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFr
 	return
 }
 
-// static int configure_video_filters()
 func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	var ret int
 	var filt_src, filt_out, last_filter *C.AVFilterContext
@@ -352,9 +336,8 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	pix_fmts[1] = C.AV_PIX_FMT_NONE;
 
 	strpix_fmts := C.CString("pix_fmts")
-    defer C.free(unsafe.Pointer(strpix_fmts))
+	defer C.free(unsafe.Pointer(strpix_fmts))
 
-	// TODO address of pix_fmts ?
 	ret = int(C.wrap_av_opt_set_int_list(unsafe.Pointer(filt_out), strpix_fmts, unsafe.Pointer(&pix_fmts),  C.AV_PIX_FMT_NONE, C.AV_OPT_SEARCH_CHILDREN))
 	if ret < 0 {
 		err = fmt.Errorf("wrap_av_opt_set_int_list failed")
@@ -376,8 +359,7 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	return
 }
 
-// Note: this func adds a filter before the lastly added filter, so the
-// processing order of the filters is in reverse
+// AddFilter adds a filter before the lastly added filter, so the processing order of the filters is in reverse
 func (self *FramerateConverter) AddFilter(first_filter *C.AVFilterContext, last_filter *C.AVFilterContext, name string, arg string) (err error){
 	var ret int
 	var filt_ctx *C.AVFilterContext
