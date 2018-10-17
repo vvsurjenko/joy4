@@ -286,29 +286,14 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 		self.inFpsDen, self.inFpsNum, 1, 1, // TODO sar num,  max(sar denom, 1)
 		self.inFpsNum, self.inFpsDen)
 
-	cbuffersrc_args := C.CString(buffersrc_args)
-	defer C.free(unsafe.Pointer(cbuffersrc_args))
-
-	strbuffer := C.CString("buffer")
-	defer C.free(unsafe.Pointer(strbuffer))
-
-	strffplay_buffer := C.CString("ffplay_buffer")
-	defer C.free(unsafe.Pointer(strffplay_buffer))
-
-	ret = int(C.avfilter_graph_create_filter(&filt_src, C.avfilter_get_by_name(strbuffer), strffplay_buffer, cbuffersrc_args, C.NULL, self.graph))
+	ret = self.CreateFilter(&filt_src, "buffer", "joy4_buffersrc", buffersrc_args)
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_create_filter failed")
 		return
 	}
 
 	// Output filter config
-	strbuffersink := C.CString("buffersink")
-	defer C.free(unsafe.Pointer(strbuffersink))
-
-	strffplay_buffersink := C.CString("ffplay_buffersink")
-	defer C.free(unsafe.Pointer(strffplay_buffersink))
-
-	ret = int(C.avfilter_graph_create_filter(&filt_out, C.avfilter_get_by_name(strbuffersink), strffplay_buffersink, (*C.char)(C.NULL), C.NULL, self.graph))
+	ret = self.CreateFilter(&filt_out, "buffersink", "buffersink", "")
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_create_filter failed")
 		return
@@ -341,21 +326,27 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	return
 }
 
+func (self *FramerateConverter) CreateFilter(filterPtr **C.AVFilterContext, filterType string, filterName string, filterArgs string) int {
+	cFilterType := C.CString(filterType)
+	defer C.free(unsafe.Pointer(cFilterType))
+
+	cFilterName := C.CString(filterName)
+	defer C.free(unsafe.Pointer(cFilterName))
+
+	cFilterArgs := C.CString(filterArgs)
+	defer C.free(unsafe.Pointer(cFilterArgs))
+
+	filterDef := C.avfilter_get_by_name(cFilterType)
+	cret := C.avfilter_graph_create_filter(filterPtr, filterDef, cFilterName, cFilterArgs, C.NULL, self.graph)
+	return int(cret)
+}
+
 // AddFilter adds a filter before the lastly added filter, so the processing order of the filters is in reverse
 func (self *FramerateConverter) AddFilter(first_filter *C.AVFilterContext, last_filter *C.AVFilterContext, name string, arg string) (err error){
 	var ret int
 	var filt_ctx *C.AVFilterContext
 
-	strname := C.CString(name)
-	defer C.free(unsafe.Pointer(strname))
-
-	strprefix := C.CString("fpsconv")
-	defer C.free(unsafe.Pointer(strprefix))
-
-	strarg := C.CString(arg)
-	defer C.free(unsafe.Pointer(strarg))
-
-	ret = int(C.avfilter_graph_create_filter(&filt_ctx, C.avfilter_get_by_name(strname), strprefix, strarg, C.NULL, self.graph))
+	ret = self.CreateFilter(&filt_ctx, name, "joy4_fpsconv", arg)
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_create_filter failed")
 		return
