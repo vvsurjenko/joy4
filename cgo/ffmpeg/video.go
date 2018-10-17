@@ -196,6 +196,7 @@ func (self *VideoScaler) VideoScale(src *VideoFrame) (dst *VideoFrame, err error
 	return
 }
 
+// FramerateConverter allows increasing or decreasing the video framerate using libavfilter's processing filters
 type FramerateConverter struct {
 	inPixelFormat, OutPixelFormat av.PixelFormat
 	inWidth, OutWidth int
@@ -204,17 +205,19 @@ type FramerateConverter struct {
 	inFpsDen, OutFpsDen int
 	pts int
 	graph *C.struct_AVFilterGraph
-	inVideoFilter  *C.AVFilterContext // the first filter in the video chain
-	outVideoFilter *C.AVFilterContext // the last filter in the video chain
+	graphSource *C.AVFilterContext
+	graphSink *C.AVFilterContext
 	outputFrames []*C.AVFrame
 }
 
+// Close frees the allocated filter graph
 func (self *FramerateConverter) Close() {
 	if self != nil {
 		C.avfilter_graph_free(&self.graph)
 	}
 }
 
+// FreeOutputImage frees all allocated images stored in outputFrames
 func (self *FramerateConverter) FreeOutputImage(idx int) {
 	if self != nil {
 		if idx < len(self.outputFrames) {
@@ -226,6 +229,7 @@ func (self *FramerateConverter) FreeOutputImage(idx int) {
 	}
 }
 
+// ConvertFramerate pushes a frame in the filtergraph and receives 0, 1 or more frames with converted framerate
 func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFrame, err error){
 	if self.graph == nil {
 		err = self.ConfigureVideoFilters()
@@ -241,7 +245,7 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFr
 
 	in.frame.pts = C.longlong(self.pts)
 	self.pts++
-	cret := C.av_buffersrc_add_frame(self.inVideoFilter, in.frame)
+	cret := C.av_buffersrc_add_frame(self.graphSource, in.frame)
 	if int(cret) < 0 {
 		err = fmt.Errorf("av_buffersrc_add_frame failed")
 		return
@@ -249,7 +253,7 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFr
 
 	for int(cret) == 0 {
 		frame := C.av_frame_alloc()
-		cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, frame, C.int(0))
+		cret = C.av_buffersink_get_frame_flags(self.graphSink, frame, C.int(0))
 		if cret < 0 {
 			C.av_frame_free(&frame)
 			break
@@ -275,57 +279,59 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFr
 	return
 }
 
+// ConfigureVideoFilters creates the filtergraph: BufferSrc => FpsConv => BufferSink
 func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	var ret int
-	var filt_src, filt_out, last_filter *C.AVFilterContext
+	var graphSource, graphSink *C.AVFilterContext
 	self.graph = C.avfilter_graph_alloc()
 
 	// Input filter config
-	buffersrc_args := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:frame_rate=%d/%d",
+	bufferSrcArgs := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:frame_rate=%d/%d",
 		self.inWidth, self.inHeight, C.int32_t(PixelFormatAV2FF(self.inPixelFormat)),
 		self.inFpsDen, self.inFpsNum, 1, 1, // TODO sar num,  max(sar denom, 1)
 		self.inFpsNum, self.inFpsDen)
 
-	ret = self.CreateFilter(&filt_src, "buffer", "joy4_buffersrc", buffersrc_args)
+	ret = self.CreateFilter(&graphSource, "buffer", "joy4_buffersrc", bufferSrcArgs)
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_create_filter failed")
 		return
 	}
 
 	// Output filter config
-	ret = self.CreateFilter(&filt_out, "buffersink", "buffersink", "")
+	ret = self.CreateFilter(&graphSink, "buffersink", "joy4_buffersink", "")
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_create_filter failed")
 		return
 	}
 
-	var pix_fmts [2]C.enum_AVPixelFormat
-	pix_fmts[0] = C.AV_PIX_FMT_YUV420P
-	pix_fmts[1] = C.AV_PIX_FMT_NONE;
+	// Set the only possible output format as I420
+	var pixFmts [2]C.enum_AVPixelFormat
+	pixFmts[0] = C.AV_PIX_FMT_YUV420P
+	pixFmts[1] = C.AV_PIX_FMT_NONE;
 
-	strpix_fmts := C.CString("pix_fmts")
-	defer C.free(unsafe.Pointer(strpix_fmts))
+	strPixFmts := C.CString("pix_fmts")
+	defer C.free(unsafe.Pointer(strPixFmts))
 
-	ret = int(C.wrap_av_opt_set_int_list(unsafe.Pointer(filt_out), strpix_fmts, unsafe.Pointer(&pix_fmts),  C.AV_PIX_FMT_NONE, C.AV_OPT_SEARCH_CHILDREN))
+	ret = int(C.wrap_av_opt_set_int_list(unsafe.Pointer(graphSink), strPixFmts, unsafe.Pointer(&pixFmts),  C.AV_PIX_FMT_NONE, C.AV_OPT_SEARCH_CHILDREN))
 	if ret < 0 {
 		err = fmt.Errorf("wrap_av_opt_set_int_list failed")
 		return
 	}
 
-	last_filter = filt_out;
-
+	// Add the 'fps' filter between the source and sink filters
 	filterarg := fmt.Sprintf("fps=%d/%d", self.OutFpsNum, self.OutFpsDen)
-	self.AddFilter(filt_src, last_filter, "framerate", filterarg)
+	self.AddFilter(graphSource, graphSink, "framerate", filterarg)
 	ret = int(C.avfilter_graph_config(self.graph, C.NULL))
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_config failed")
 	}
 
-	self.inVideoFilter  = filt_src;
-	self.outVideoFilter = filt_out;
+	self.graphSource = graphSource;
+	self.graphSink = graphSink;
 	return
 }
 
+// CreateFilter fills filterPtr according to the given filterType 
 func (self *FramerateConverter) CreateFilter(filterPtr **C.AVFilterContext, filterType string, filterName string, filterArgs string) int {
 	cFilterType := C.CString(filterType)
 	defer C.free(unsafe.Pointer(cFilterType))
@@ -341,24 +347,24 @@ func (self *FramerateConverter) CreateFilter(filterPtr **C.AVFilterContext, filt
 	return int(cret)
 }
 
-// AddFilter adds a filter before the lastly added filter, so the processing order of the filters is in reverse
-func (self *FramerateConverter) AddFilter(first_filter *C.AVFilterContext, last_filter *C.AVFilterContext, name string, arg string) (err error){
+// AddFilter creates a filter and adds it in the filtergraph, between prevFilter and nextFilter
+func (self *FramerateConverter) AddFilter(prevFilter *C.AVFilterContext, nextFilter *C.AVFilterContext, name string, arg string) (err error){
 	var ret int
-	var filt_ctx *C.AVFilterContext
+	var newFilter *C.AVFilterContext
 
-	ret = self.CreateFilter(&filt_ctx, name, "joy4_fpsconv", arg)
+	ret = self.CreateFilter(&newFilter, name, "joy4_fpsconv", arg)
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_create_filter failed")
 		return
 	}
 
-	ret = int(C.avfilter_link(filt_ctx, 0, last_filter, 0))
+	ret = int(C.avfilter_link(newFilter, 0, nextFilter, 0))
 	if ret < 0 {
 		err = fmt.Errorf("first avfilter_link failed: %d", ret)
 		return
 	}
 
-	ret = int(C.avfilter_link(first_filter, 0, filt_ctx, 0))
+	ret = int(C.avfilter_link(prevFilter, 0, newFilter, 0))
 	if ret < 0 {
 		err = fmt.Errorf("second avfilter_link failed: %d", ret)
 		return
