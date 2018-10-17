@@ -111,7 +111,6 @@ type VideoScaler struct {
 	OutYStride int
 	OutCStride int
 	swsCtx *C.struct_SwsContext
-
 	outputImgPtrs [3]*C.uint8_t
 }
 
@@ -203,7 +202,6 @@ type FramerateConverter struct {
 	inHeight, OutHeight int
 	inFpsNum, OutFpsNum int
 	inFpsDen, OutFpsDen int
-	
 	pts int
 	graph *C.struct_AVFilterGraph
 	inVideoFilter  *C.AVFilterContext // the first filter in the video chain
@@ -231,10 +229,9 @@ func (self *FramerateConverter) FreeOutputImage(idx int) {
 func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFrame, err error){
 	if self.graph == nil {
 		err = self.ConfigureVideoFilters()
-		if err == nil {
-			fmt.Printf("ConfigureVideoFilters ok: %d/%d to %d/%d\n", self.inFpsNum, self.inFpsDen, self.OutFpsNum, self.OutFpsDen)
-		} else {
+		if err != nil {
 			fmt.Println("ConfigureVideoFilters failed:", err)
+			return
 		}
 	}
 
@@ -247,7 +244,6 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFr
 	cret := C.av_buffersrc_add_frame(self.inVideoFilter, in.frame)
 	if int(cret) < 0 {
 		err = fmt.Errorf("av_buffersrc_add_frame failed")
-		fmt.Println(err)
 		return
 	}
 
@@ -255,9 +251,6 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFr
 		frame := C.av_frame_alloc()
 		cret = C.av_buffersink_get_frame_flags(self.outVideoFilter, frame, C.int(0))
 		if cret < 0 {
-			if cret == C.AVERROR_EOF {
-				fmt.Println("EOF")
-			}
 			C.av_frame_free(&frame)
 			break
 		}
@@ -265,18 +258,18 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFr
 		lsize := frame.linesize[0] * frame.height
 		csize := frame.linesize[1] * frame.height
 
-		f					:= &VideoFrame{}
-		f.frame				= frame
-		self.outputFrames	= append(self.outputFrames, frame)
+		f := &VideoFrame{}
+		f.frame = frame
+		self.outputFrames = append(self.outputFrames, frame)
 
-		f.Image.Y			= fromCPtr(unsafe.Pointer(frame.data[0]), int(lsize))
-		f.Image.Cb			= fromCPtr(unsafe.Pointer(frame.data[1]), int(csize))
-		f.Image.Cr			= fromCPtr(unsafe.Pointer(frame.data[2]), int(csize))
-		f.Image.YStride		= int(frame.linesize[0])
-		f.Image.CStride		= int(frame.linesize[1])
-		f.Image.Rect		= in.Image.Rect
-		f.Framerate.Num		= self.OutFpsNum
-		f.Framerate.Den		= self.OutFpsDen
+		f.Image.Y = fromCPtr(unsafe.Pointer(frame.data[0]), int(lsize))
+		f.Image.Cb = fromCPtr(unsafe.Pointer(frame.data[1]), int(csize))
+		f.Image.Cr = fromCPtr(unsafe.Pointer(frame.data[2]), int(csize))
+		f.Image.YStride = int(frame.linesize[0])
+		f.Image.CStride = int(frame.linesize[1])
+		f.Image.Rect = in.Image.Rect
+		f.Framerate.Num = self.OutFpsNum
+		f.Framerate.Den = self.OutFpsDen
 		out = append(out, f)
 	}
 	return
@@ -287,21 +280,12 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	var filt_src, filt_out, last_filter *C.AVFilterContext
 	self.graph = C.avfilter_graph_alloc()
 
-	// sws_flags_str := fmt.Sprintf("flags=%s", ) // sws flags go here
-	// csws_flags_str := C.CString(sws_flags_str)
-	// defer C.free(unsafe.Pointer(csws_flags_str))
-	// if C.strlen(csws_flags_str) {
-	// 	csws_flags_str[C.strlen(csws_flags_str)-1] = 0 // '\0'
-	// }
-	// self.graph.scale_sws_opts = av_strdup(csws_flags_str)
-
 	// Input filter config
 	buffersrc_args := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:frame_rate=%d/%d",
 		self.inWidth, self.inHeight, C.int32_t(PixelFormatAV2FF(self.inPixelFormat)),
-		self.inFpsDen, self.inFpsNum, 1, 1, // sar num,  max(sar denom, 1)
+		self.inFpsDen, self.inFpsNum, 1, 1, // TODO sar num,  max(sar denom, 1)
 		self.inFpsNum, self.inFpsDen)
 
-	fmt.Printf("\033[44m%+v\n\033[0m", buffersrc_args)
 	cbuffersrc_args := C.CString(buffersrc_args)
 	defer C.free(unsafe.Pointer(cbuffersrc_args))
 
@@ -346,7 +330,6 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	last_filter = filt_out;
 
 	filterarg := fmt.Sprintf("fps=%d/%d", self.OutFpsNum, self.OutFpsDen)
-	fmt.Printf("\033[45m%+v\n\033[0m", filterarg)
 	self.AddFilter(filt_src, last_filter, "framerate", filterarg)
 	ret = int(C.avfilter_graph_config(self.graph, C.NULL))
 	if ret < 0 {
@@ -804,7 +787,8 @@ func (self *VideoDecoder) Decode(pkt []byte) (img *VideoFrame, err error) {
 
 		num, den := self.GetFramerate()
 
-		img = &VideoFrame{Image: image.YCbCr{
+		img = &VideoFrame{
+			Image: image.YCbCr{
 				Y: fromCPtr(unsafe.Pointer(frame.data[0]), ys*h),
 				Cb: fromCPtr(unsafe.Pointer(frame.data[1]), cs*h/2),
 				Cr: fromCPtr(unsafe.Pointer(frame.data[2]), cs*h/2),
