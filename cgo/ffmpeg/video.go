@@ -120,11 +120,12 @@ func (v *VideoFrame) SetFramerate(num, den int) {
 }
 
 type VideoScaler struct {
-	inPixelFormat, OutPixelFormat av.PixelFormat
-	inWidth, OutWidth int
-	inHeight, OutHeight int
-	inYStride, OutYStride int
-	inCStride, OutCStride int
+	inHeight int
+	OutPixelFormat av.PixelFormat
+	OutWidth int
+	OutHeight int
+	OutYStride int
+	OutCStride int
 	swsCtx *C.struct_SwsContext
 
 	outputImgPtrs [3]*C.uint8_t
@@ -194,23 +195,15 @@ func (self *VideoScaler) videoScaleOne(src *VideoFrame) (dst *VideoFrame, err er
 
 func (self *VideoScaler) VideoScale(src *VideoFrame) (dst *VideoFrame, err error) {
 	if self.swsCtx == nil {
-		self.inPixelFormat	= PixelFormatFF2AV(int32(src.frame.format))
-		self.inWidth		= src.Image.Rect.Dx()
-		self.inHeight		= src.Image.Rect.Dy()
-		self.inYStride		= src.Image.YStride
-		self.inCStride		= src.Image.CStride
+		self.inHeight = src.Image.Rect.Dy()
 
-		fmt.Printf("Create scale context: %s, %dx%d -> %s, %dx%d\n",
-				/*C.av_get_pix_fmt_name*/(self.inPixelFormat.String()), self.inWidth, self.inHeight,
-				/*C.av_get_pix_fmt_name*/(self.OutPixelFormat.String()), self.OutWidth, self.OutHeight);
-
-		self.swsCtx = C.sws_getContext(C.int(self.inWidth), C.int(self.inHeight), PixelFormatAV2FF(self.inPixelFormat),
+		self.swsCtx = C.sws_getContext(C.int(src.Image.Rect.Dx()), C.int(self.inHeight), int32(src.frame.format),
 			C.int(self.OutWidth), C.int(self.OutHeight), PixelFormatAV2FF(self.OutPixelFormat),
 			C.SWS_BILINEAR, (*C.SwsFilter)(C.NULL), (*C.SwsFilter)(C.NULL), (*C.double)(C.NULL))
 
 		if self.swsCtx == nil {
 			err = fmt.Errorf("Impossible to create scale context for the conversion fmt:%d s:%dx%d -> fmt:%d s:%dx%d\n",
-				self.inPixelFormat, self.inWidth, self.inHeight,
+				PixelFormatFF2AV(int32(src.frame.format)), src.Image.Rect.Dx(), self.inHeight,
 				self.OutPixelFormat, self.OutWidth, self.OutHeight);
 			return
 		}
@@ -474,6 +467,13 @@ func (enc *VideoEncoder) Setup() (err error) {
 	}
 
 
+	if err = enc.SetOption("preset", "ultrafast"); err != nil {
+		return
+	}
+	if err = enc.SetOption("crf", "23"); err != nil {
+		return
+	}
+
 	// All the following params are described in ffmpeg: avcodec.h, in struct AVCodecContext
 	ff.codecCtx.width			= C.int(enc.width)
 	ff.codecCtx.height			= C.int(enc.height)
@@ -482,9 +482,16 @@ func (enc *VideoEncoder) Setup() (err error) {
 	ff.codecCtx.time_base.num	= C.int(enc.fpsDen)
 	ff.codecCtx.time_base.den	= C.int(enc.fpsNum)
 	ff.codecCtx.gop_size		= C.int(enc.gopSize)
-	ff.codecCtx.bit_rate		= C.int64_t(enc.Bitrate)
 
-	if C.avcodec_open2(ff.codecCtx, ff.codec, nil) != 0 {
+	// Use VBV for rate control.
+	// rc_max_rate is the target bitrate, and rc_buffer_size is the time window
+	// over which the bitrate is controlled. By setting size = max * 2, we give
+	// a window of 2 seconds to mitigate the effects of bitrate peaks on the 
+	// overall quality
+	ff.codecCtx.rc_max_rate		= C.int64_t(enc.Bitrate)
+	ff.codecCtx.rc_buffer_size	= C.int(ff.codecCtx.rc_max_rate * 2)
+
+	if C.avcodec_open2(ff.codecCtx, ff.codec, &ff.options) != 0 {
 		err = fmt.Errorf("ffmpeg: encoder: avcodec_open2 failed")
 		return
 	}
@@ -537,8 +544,7 @@ func (enc *VideoEncoder) encodeOne(img *VideoFrame) (gotpkt bool, pkt []byte, er
 	ff.frame.sample_aspect_ratio.num = 0 // TODO
 	ff.frame.sample_aspect_ratio.den = 1
 
-	// Increase pts and convert in 90k: pts * 90000 / fps
-	ff.frame.pts = C.int64_t( int(enc.pts) * enc.fpsDen * 90000 / enc.fpsNum)
+	ff.frame.pts = C.longlong(enc.pts)
 	enc.pts++
 
 	cerr := C.avcodec_encode_video2(ff.codecCtx, &cpkt, ff.frame, &cgotpkt)
@@ -574,10 +580,11 @@ func (enc *VideoEncoder) encodeOne(img *VideoFrame) (gotpkt bool, pkt []byte, er
 		fmt.Println("ffmpeg: no pkt !")
 	}
 
-	if ok, kbps := enc.bm.Measure(len(avpkt.Data)); ok {
-		fmt.Println("Encoded video bitrate (kbps):", kbps)
+	if debug {
+		if ok, kbps := enc.bm.Measure(len(avpkt.Data)); ok {
+			fmt.Println("Encoded video bitrate (kbps):", kbps)
+		}
 	}
-
 	return gotpkt, avpkt.Data, err
 }
 
@@ -585,11 +592,6 @@ func (enc *VideoEncoder) encodeOne(img *VideoFrame) (gotpkt bool, pkt []byte, er
 func (self *VideoEncoder) scale(img *VideoFrame) (out *VideoFrame, err error) {
 	if self.scaler == nil {
 		self.scaler = &VideoScaler{
-			inPixelFormat:	PixelFormatFF2AV(int32(img.frame.format)),
-			inWidth:		img.Image.Rect.Dx(),
-			inHeight:		img.Image.Rect.Dy(),
-			inYStride:		img.Image.YStride,
-			inCStride:		img.Image.CStride,
 			OutPixelFormat:	self.pixelFormat,
 			OutWidth:		self.width,
 			OutHeight:		self.height,

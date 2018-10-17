@@ -315,12 +315,10 @@ func PktToCodecData(pkt av.Packet) (h264CodecData av.CodecData, err error) {
 			h264CodecData, err = NewCodecDataFromSPSAndPPS(sps, pps)
 			if err != nil {
 				h264CodecData = nil
-				fmt.Println("can't init codecData, err:", err)
 				return
 			}
 		} else {
 			err = fmt.Errorf("h264parser: empty sps and/or pps")
-			fmt.Println("can't init codecData, err:", err)
 			return
 		}
 	}
@@ -713,7 +711,6 @@ func (self CodecData) PacketDuration([]byte) (dur time.Duration, err error) {
 	fpsNum, fpsDen := self.Framerate()
 	if fpsNum <= 0 || fpsDen <= 0 {
 		err = fmt.Errorf("invalid framerate: %d/%d", fpsNum, fpsDen)
-		fmt.Println(err)
 		return
 	}
 	dur = (time.Second * time.Duration(fpsDen)) / time.Duration(fpsNum)

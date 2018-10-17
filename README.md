@@ -70,8 +70,6 @@ ffmpeg version >= 3.0 (optional)
 
 HLS / MPEG-DASH Server
 
-ffmpeg.VideoEncoder / ffmpeg.SWScale
-
 # License
 
 MIT
