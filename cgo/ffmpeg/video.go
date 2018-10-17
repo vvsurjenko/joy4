@@ -585,13 +585,12 @@ func (self *VideoEncoder) convertFramerate(img *VideoFrame) (out []*VideoFrame, 
 func (enc *VideoEncoder) Encode(img *VideoFrame) (pkts [][]byte, err error) {
 	var gotpkt bool
 	var pkt []byte
+	var frames []*VideoFrame
 
-	// TODO fix scaler before fps conv and manage free
-
+	// If the input framerate and desired encoding framerate differ, convert using FramerateConverter
 	imgFps := float64(img.Framerate.Num) / float64(img.Framerate.Den)
 	encFps := float64(enc.fpsNum) / float64(enc.fpsDen)
 
-	var frames []*VideoFrame
 	if imgFps != encFps {
 		if frames, err = enc.convertFramerate(img); err != nil {
 			return nil, err
@@ -603,6 +602,8 @@ func (enc *VideoEncoder) Encode(img *VideoFrame) (pkts [][]byte, err error) {
 		frames = append(frames, img)
 	}
 
+	// When converting to a framerate higher than that of the input,
+	// convertFramerate can return multiple frames, so process them all here.
 	for idx, f := range frames {
 		if PixelFormatFF2AV(int32(f.frame.format)) != enc.pixelFormat || f.Width() != enc.width || f.Height() != enc.height {
 			if f, err = enc.scale(f); err != nil {
