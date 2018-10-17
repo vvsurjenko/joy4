@@ -14,7 +14,6 @@ int wrap_av_opt_set_int_list(void* obj, const char* name, void* val, int64_t ter
 }
 
 	#cgo pkg-config: libavfilter
-	#include <libavfilter/avfilter.h>
 */
 import "C"
 import (

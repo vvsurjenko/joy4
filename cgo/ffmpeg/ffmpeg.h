@@ -11,7 +11,6 @@
 #include <libavfilter/buffersrc.h>
 #include <libavfilter/buffersink.h>
 
-
 typedef struct {
 	AVCodec *codec;
 	AVCodecContext *codecCtx;
