@@ -26,6 +26,7 @@ import (
 	"github.com/nareix/joy4/codec/h264parser"
 )
 
+// VideoFramerate represents a FPS value with a fraction (numerator + denominator)
 type VideoFramerate struct {
 	Num int
 	Den int
@@ -70,6 +71,7 @@ func (v VideoFrame) GetDataPtr() (y, cb, cr *[]uint8) {
 	return &v.Image.Y, &v.Image.Cb, &v.Image.Cr
 }
 
+// GetFramerate returns the framerate as a fraction (numerator and denominator)
 func (v VideoFrame) GetFramerate() (num, den int) {
 	return v.Framerate.Num, v.Framerate.Den
 }
@@ -98,6 +100,7 @@ func (v *VideoFrame) SetResolution(w, h int) {
 	v.Image.Rect = image.Rectangle{ image.Point{0,0}, image.Point{w, h}}
 }
 
+// SetFramerate sets the frame's FPS numerator and denominator
 func (v *VideoFrame) SetFramerate(num, den int) {
 	v.Framerate.Num = num
 	v.Framerate.Den = den
@@ -566,6 +569,7 @@ func (self *VideoEncoder) scale(img *VideoFrame) (out *VideoFrame, err error) {
 	return
 }
 
+// convertFramerate instanciates a FramerateConverter to convert from img's framerate to the encoder's framerate
 func (self *VideoEncoder) convertFramerate(img *VideoFrame) (out []*VideoFrame, err error) {
 	if self.framerateConverter == nil {
 		self.framerateConverter = &FramerateConverter{
