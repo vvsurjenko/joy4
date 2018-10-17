@@ -303,7 +303,7 @@ func (enc *VideoEncoder) encodeOne(img *VideoFrame) (gotpkt bool, pkt []byte, er
 	ff.frame.sample_aspect_ratio.num = 0 // TODO
 	ff.frame.sample_aspect_ratio.den = 1
 
-	ff.frame.pts = C.longlong(enc.pts)
+	ff.frame.pts = C.int64_t(enc.pts)
 	enc.pts++
 
 	cerr := C.avcodec_encode_video2(ff.codecCtx, &cpkt, ff.frame, &cgotpkt)
