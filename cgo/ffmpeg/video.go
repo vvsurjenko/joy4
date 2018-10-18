@@ -206,7 +206,7 @@ type FramerateConverter struct {
 	inHeight, OutHeight int
 	inFpsNum, OutFpsNum int
 	inFpsDen, OutFpsDen int
-	pts int
+	pts int64
 	graph *C.struct_AVFilterGraph
 	graphSource *C.AVFilterContext
 	graphSink *C.AVFilterContext
@@ -246,7 +246,7 @@ func (self *FramerateConverter) ConvertFramerate(in *VideoFrame) (out []*VideoFr
 		return
 	}
 
-	in.frame.pts = C.longlong(self.pts)
+	in.frame.pts = C.int64_t(self.pts)
 	self.pts++
 	cret := C.av_buffersrc_add_frame(self.graphSource, in.frame)
 	if int(cret) < 0 {
