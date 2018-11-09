@@ -445,6 +445,15 @@ func (enc *VideoEncoder) Setup() (err error) {
 	if err = enc.SetOption("preset", "ultrafast"); err != nil {
 		return
 	}
+	if err = enc.SetOption("tune", "zerolatency"); err != nil {
+		return
+	}
+	if err = enc.SetOption("profile", "baseline"); err != nil {
+		return
+	}
+	if err = enc.SetOption("level", "40"); err != nil {
+		return
+	}
 	if err = enc.SetOption("crf", "23"); err != nil {
 		return
 	}
