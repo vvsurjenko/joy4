@@ -680,15 +680,6 @@ func (enc *VideoEncoder) SetOption(key string, val interface{}) (err error) {
 	ff := &enc.ff.ff
 
 	sval := fmt.Sprint(val)
-	if key == "profile" {
-		ff.profile = C.avcodec_profile_name_to_int(ff.codec, C.CString(sval))
-		if ff.profile == C.FF_PROFILE_UNKNOWN {
-			err = fmt.Errorf("ffmpeg: profile `%s` invalid", sval)
-			return
-		}
-		return
-	}
-
 	C.av_dict_set(&ff.options, C.CString(key), C.CString(sval), 0)
 	return
 }
