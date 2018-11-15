@@ -300,11 +300,18 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 	var graphSource, graphSink *C.AVFilterContext
 	self.graph = C.avfilter_graph_alloc()
 
+	if self.graph == nil {
+		err = fmt.Errorf("alloc error, graph is nil")
+		return
+	}
+
 	// Input filter config
 	bufferSrcArgs := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:frame_rate=%d/%d",
 		self.inWidth, self.inHeight, C.int32_t(PixelFormatAV2FF(self.inPixelFormat)),
 		self.inFpsDen, self.inFpsNum, 1, 1, // TODO sar num,  max(sar denom, 1)
 		self.inFpsNum, self.inFpsDen)
+
+	fmt.Println("bufferSrcArgs:", bufferSrcArgs)
 
 	ret = self.CreateFilter(&graphSource, "buffer", "joy4_buffersrc", bufferSrcArgs)
 	if ret < 0 {
@@ -312,12 +319,15 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 		return
 	}
 
+	fmt.Println("created joy4_buffersrc ok")
+
 	// Output filter config
 	ret = self.CreateFilter(&graphSink, "buffersink", "joy4_buffersink", "")
 	if ret < 0 {
 		err = fmt.Errorf("CreateFilter 'buffersink' failed: ret=%d", ret)
 		return
 	}
+	fmt.Println("created joy4_buffersink ok")
 
 	// Set the only possible output format as I420
 	var pixFmts [2]C.enum_AVPixelFormat
@@ -333,14 +343,22 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 		return
 	}
 
+
+	fmt.Println("set video format ok")
+
 	// Add the 'fps' filter between the source and sink filters
 	filterarg := fmt.Sprintf("fps=%d/%d", self.OutFpsNum, self.OutFpsDen)
+
 	fmt.Println(filterarg)
+
 	self.AddFilter(graphSource, graphSink, "framerate", filterarg)
 	ret = int(C.avfilter_graph_config(self.graph, C.NULL))
 	if ret < 0 {
 		err = fmt.Errorf("avfilter_graph_config failed")
 	}
+
+
+	fmt.Println("add fps filter ok")
 
 	self.graphSource = graphSource;
 	self.graphSink = graphSink;
