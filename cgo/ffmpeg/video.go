@@ -376,6 +376,8 @@ func (self *FramerateConverter) CreateFilter(filterPtr **C.AVFilterContext, filt
 	cFilterArgs := C.CString(filterArgs)
 	defer C.free(unsafe.Pointer(cFilterArgs))
 
+	fmt.Println("cFilterType:", cFilterType)
+	fmt.Printf("cFilterType: %v", cFilterType)
 	filterDef := C.avfilter_get_by_name(cFilterType)
 
 	if filterDef == nil {
