@@ -335,6 +335,7 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 
 	// Add the 'fps' filter between the source and sink filters
 	filterarg := fmt.Sprintf("fps=%d/%d", self.OutFpsNum, self.OutFpsDen)
+	fmt.Println(filterarg)
 	self.AddFilter(graphSource, graphSink, "framerate", filterarg)
 	ret = int(C.avfilter_graph_config(self.graph, C.NULL))
 	if ret < 0 {
