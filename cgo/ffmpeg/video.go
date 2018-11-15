@@ -313,18 +313,18 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 
 	fmt.Println("bufferSrcArgs:", bufferSrcArgs)
 
-	ret = self.CreateFilter(&graphSource, "buffer", "joy4_buffersrc", bufferSrcArgs)
-	if ret < 0 {
-		err = fmt.Errorf("CreateFilter 'buffer' failed: ret=%d", ret)
+	err = self.CreateFilter(&graphSource, "buffer", "joy4_buffersrc", bufferSrcArgs)
+	if err != nil {
+		err = fmt.Errorf("CreateFilter 'buffer' failed: %s", err)
 		return
 	}
 
 	fmt.Println("created joy4_buffersrc ok")
 
 	// Output filter config
-	ret = self.CreateFilter(&graphSink, "buffersink", "joy4_buffersink", "")
-	if ret < 0 {
-		err = fmt.Errorf("CreateFilter 'buffersink' failed: ret=%d", ret)
+	err = self.CreateFilter(&graphSink, "buffersink", "joy4_buffersink", "")
+	if err != nil {
+		err = fmt.Errorf("CreateFilter 'buffersink' failed: %s", err)
 		return
 	}
 	fmt.Println("created joy4_buffersink ok")
@@ -366,7 +366,7 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 }
 
 // CreateFilter fills filterPtr according to the given filterType 
-func (self *FramerateConverter) CreateFilter(filterPtr **C.AVFilterContext, filterType string, filterName string, filterArgs string) int {
+func (self *FramerateConverter) CreateFilter(filterPtr **C.AVFilterContext, filterType string, filterName string, filterArgs string) (err error) {
 	cFilterType := C.CString(filterType)
 	defer C.free(unsafe.Pointer(cFilterType))
 
@@ -377,18 +377,32 @@ func (self *FramerateConverter) CreateFilter(filterPtr **C.AVFilterContext, filt
 	defer C.free(unsafe.Pointer(cFilterArgs))
 
 	filterDef := C.avfilter_get_by_name(cFilterType)
+
+	if filterDef == nil {
+		err = fmt.Errorf("avfilter_get_by_name failed, filter not found: '%s'", filterType)
+		return err
+	}
+
 	fmt.Printf("\033[44mfilterPtr: %+v\033[0m\n", filterPtr)
 	fmt.Printf("\033[44mfilterDef: %+v\033[0m\n", filterDef)
 	fmt.Printf("\033[44mcFilterName: %+v\033[0m\n", cFilterName)
 	fmt.Printf("\033[44mcFilterArgs: %+v\033[0m\n", cFilterArgs)
 	fmt.Printf("\033[44mself.graph: %+v\033[0m\n", self.graph)
+
 	cret := C.avfilter_graph_create_filter(filterPtr, filterDef, cFilterName, cFilterArgs, C.NULL, self.graph)
+
 	fmt.Printf("\033[44mfilterPtr: %+v\033[0m\n", filterPtr)
 	fmt.Printf("\033[44mfilterDef: %+v\033[0m\n", filterDef)
 	fmt.Printf("\033[44mcFilterName: %+v\033[0m\n", cFilterName)
 	fmt.Printf("\033[44mcFilterArgs: %+v\033[0m\n", cFilterArgs)
 	fmt.Printf("\033[44mself.graph: %+v\033[0m\n", self.graph)
-	return int(cret)
+
+	if int(cret) != 0 {
+		err = fmt.Errorf("avfilter_graph_create_filter failed, ret=%d", int(cret))
+		return err
+	}
+
+	return
 }
 
 // AddFilter creates a filter and adds it in the filtergraph, between prevFilter and nextFilter
@@ -396,9 +410,9 @@ func (self *FramerateConverter) AddFilter(prevFilter *C.AVFilterContext, nextFil
 	var ret int
 	var newFilter *C.AVFilterContext
 
-	ret = self.CreateFilter(&newFilter, name, "joy4_fpsconv", arg)
-	if ret < 0 {
-		err = fmt.Errorf("CreateFilter '%s' failed: ret=%d", name, ret)
+	err = self.CreateFilter(&newFilter, name, "joy4_fpsconv", arg)
+	if err != nil {
+		err = fmt.Errorf("CreateFilter '%s' failed: %s", name, err)
 		return
 	}
 
