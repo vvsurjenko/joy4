@@ -308,14 +308,14 @@ func (self *FramerateConverter) ConfigureVideoFilters() (err error) {
 
 	ret = self.CreateFilter(&graphSource, "buffer", "joy4_buffersrc", bufferSrcArgs)
 	if ret < 0 {
-		err = fmt.Errorf("avfilter_graph_create_filter failed")
+		err = fmt.Errorf("CreateFilter 'buffer' failed: ret=%d", ret)
 		return
 	}
 
 	// Output filter config
 	ret = self.CreateFilter(&graphSink, "buffersink", "joy4_buffersink", "")
 	if ret < 0 {
-		err = fmt.Errorf("avfilter_graph_create_filter failed")
+		err = fmt.Errorf("CreateFilter 'buffersink' failed: ret=%d", ret)
 		return
 	}
 
@@ -369,7 +369,7 @@ func (self *FramerateConverter) AddFilter(prevFilter *C.AVFilterContext, nextFil
 
 	ret = self.CreateFilter(&newFilter, name, "joy4_fpsconv", arg)
 	if ret < 0 {
-		err = fmt.Errorf("avfilter_graph_create_filter failed")
+		err = fmt.Errorf("CreateFilter '%s' failed: ret=%d", name, ret)
 		return
 	}
 
