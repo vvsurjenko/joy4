@@ -377,7 +377,17 @@ func (self *FramerateConverter) CreateFilter(filterPtr **C.AVFilterContext, filt
 	defer C.free(unsafe.Pointer(cFilterArgs))
 
 	filterDef := C.avfilter_get_by_name(cFilterType)
+	fmt.Printf("\033[44mfilterPtr: %+v\033[0m\n", filterPtr)
+	fmt.Printf("\033[44mfilterDef: %+v\033[0m\n", filterDef)
+	fmt.Printf("\033[44mcFilterName: %+v\033[0m\n", cFilterName)
+	fmt.Printf("\033[44mcFilterArgs: %+v\033[0m\n", cFilterArgs)
+	fmt.Printf("\033[44mself.graph: %+v\033[0m\n", self.graph)
 	cret := C.avfilter_graph_create_filter(filterPtr, filterDef, cFilterName, cFilterArgs, C.NULL, self.graph)
+	fmt.Printf("\033[44mfilterPtr: %+v\033[0m\n", filterPtr)
+	fmt.Printf("\033[44mfilterDef: %+v\033[0m\n", filterDef)
+	fmt.Printf("\033[44mcFilterName: %+v\033[0m\n", cFilterName)
+	fmt.Printf("\033[44mcFilterArgs: %+v\033[0m\n", cFilterArgs)
+	fmt.Printf("\033[44mself.graph: %+v\033[0m\n", self.graph)
 	return int(cret)
 }
 
