@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"image"
 	"reflect"
-	"github.com/nareix/joy4/av"
-	"github.com/nareix/joy4/codec/h264parser"
+	"github.com/bazookon/joy4/av"
+	"github.com/bazookon/joy4/codec/h264parser"
 )
 
 // VideoFramerate represents a FPS value with a fraction (numerator + denominator)

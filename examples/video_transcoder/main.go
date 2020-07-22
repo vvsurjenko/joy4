@@ -7,14 +7,14 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/nareix/joy4/format"
-	"github.com/nareix/joy4/av"
-	"github.com/nareix/joy4/av/avutil"
-	"github.com/nareix/joy4/av/pubsub"
-	"github.com/nareix/joy4/av/transcode"
-	"github.com/nareix/joy4/format/rtmp"
-	"github.com/nareix/joy4/format/flv"
-	"github.com/nareix/joy4/cgo/ffmpeg"
+	"github.com/bazookon/joy4/format"
+	"github.com/bazookon/joy4/av"
+	"github.com/bazookon/joy4/av/avutil"
+	"github.com/bazookon/joy4/av/pubsub"
+	"github.com/bazookon/joy4/av/transcode"
+	"github.com/bazookon/joy4/format/rtmp"
+	"github.com/bazookon/joy4/format/flv"
+	"github.com/bazookon/joy4/cgo/ffmpeg"
 )
 
 func init() {

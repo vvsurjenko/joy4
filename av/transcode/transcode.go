@@ -5,9 +5,9 @@ package transcode
 import (
 	"fmt"
 	"time"
-	"github.com/nareix/joy4/av"
-	"github.com/nareix/joy4/av/pktque"
-	"github.com/nareix/joy4/cgo/ffmpeg"
+	"github.com/bazookon/joy4/av"
+	"github.com/bazookon/joy4/av/pktque"
+	"github.com/bazookon/joy4/cgo/ffmpeg"
 )
 
 var Debug bool
