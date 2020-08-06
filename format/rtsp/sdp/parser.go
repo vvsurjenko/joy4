@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"github.com/bazookon/joy4/av"
+	"github.com/vvsurjenko/joy4/av"
 	"strconv"
 	"strings"
 )

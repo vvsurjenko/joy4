@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/bazookon/joy4/av"
-	"github.com/bazookon/joy4/av/avutil"
-	"github.com/bazookon/joy4/av/pktque"
-	"github.com/bazookon/joy4/av/pubsub"
-	"github.com/bazookon/joy4/format"
-	"github.com/bazookon/joy4/format/rtmp"
+	"github.com/vvsurjenko/joy4/av"
+	"github.com/vvsurjenko/joy4/av/avutil"
+	"github.com/vvsurjenko/joy4/av/pktque"
+	"github.com/vvsurjenko/joy4/av/pubsub"
+	"github.com/vvsurjenko/joy4/format"
+	"github.com/vvsurjenko/joy4/format/rtmp"
 	"sync"
 	"time"
 )

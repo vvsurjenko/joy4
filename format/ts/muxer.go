@@ -2,10 +2,10 @@ package ts
 
 import (
 	"fmt"
-	"github.com/bazookon/joy4/av"
-	"github.com/bazookon/joy4/codec/aacparser"
-	"github.com/bazookon/joy4/codec/h264parser"
-	"github.com/bazookon/joy4/format/ts/tsio"
+	"github.com/vvsurjenko/joy4/av"
+	"github.com/vvsurjenko/joy4/codec/aacparser"
+	"github.com/vvsurjenko/joy4/codec/h264parser"
+	"github.com/vvsurjenko/joy4/format/ts/tsio"
 	"io"
 	"time"
 )

@@ -1,3 +1,3 @@
-module github.com/bazookon/joy4
+module github.com/vvsurjenko/joy4
 
 go 1.14

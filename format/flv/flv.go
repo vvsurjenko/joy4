@@ -3,14 +3,14 @@ package flv
 import (
 	"bufio"
 	"fmt"
-	"github.com/bazookon/joy4/utils/bits/pio"
-	"github.com/bazookon/joy4/av"
-	"github.com/bazookon/joy4/av/avutil"
-	"github.com/bazookon/joy4/codec"
-	"github.com/bazookon/joy4/codec/aacparser"
-	"github.com/bazookon/joy4/codec/fake"
-	"github.com/bazookon/joy4/codec/h264parser"
-	"github.com/bazookon/joy4/format/flv/flvio"
+	"github.com/vvsurjenko/joy4/utils/bits/pio"
+	"github.com/vvsurjenko/joy4/av"
+	"github.com/vvsurjenko/joy4/av/avutil"
+	"github.com/vvsurjenko/joy4/codec"
+	"github.com/vvsurjenko/joy4/codec/aacparser"
+	"github.com/vvsurjenko/joy4/codec/fake"
+	"github.com/vvsurjenko/joy4/codec/h264parser"
+	"github.com/vvsurjenko/joy4/format/flv/flvio"
 	"io"
 )
 

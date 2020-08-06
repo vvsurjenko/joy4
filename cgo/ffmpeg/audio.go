@@ -16,9 +16,9 @@ import (
 	"runtime"
 	"fmt"
 	"time"
-	"github.com/bazookon/joy4/av"
-	"github.com/bazookon/joy4/av/avutil"
-	"github.com/bazookon/joy4/codec/aacparser"
+	"github.com/vvsurjenko/joy4/av"
+	"github.com/vvsurjenko/joy4/av/avutil"
+	"github.com/vvsurjenko/joy4/codec/aacparser"
 )
 
 const debug = false
