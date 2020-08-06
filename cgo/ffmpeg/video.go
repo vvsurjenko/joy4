@@ -907,3 +907,39 @@ func PixelFormatFF2AV(ffpixelfmt int32) (pixelFormat av.PixelFormat) {
 	}
 	return
 }
+
+func GenFrame() (img *VideoFrame, err error) {
+	frame := C.av_frame_alloc()
+	frame.width=1280
+	frame.height=720
+	frame.format=C.AV_PIX_FMT_YUV420P
+	C.av_frame_get_buffer(frame,0)
+	w:=1280
+	h:=720
+	cw := (w+1)/2
+	ch := (h+1)/2
+	i0 := w*h + 0*cw*ch
+	i1 := w*h + 1*cw*ch
+	i2 := w*h + 2*cw*ch
+	b := make([]byte, i2)
+
+	img = &VideoFrame{
+		Image: image.YCbCr{
+			Y:              b[:i0:i0],
+			Cb:             b[i0:i1:i1],
+			Cr:             b[i1:i2:i2],
+			YStride:        w,
+			CStride:        cw,
+			SubsampleRatio: image.YCbCrSubsampleRatio420,
+			Rect:           image.Rect(0, 0, w, h),
+		},
+		frame: frame,
+		Framerate: VideoFramerate{
+			Num: 18000,
+			Den: 1000,
+		},
+	}
+	runtime.SetFinalizer(img, freeVideoFrame)
+
+	return
+}
