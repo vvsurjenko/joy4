@@ -19,6 +19,7 @@ import "C"
 import (
 	"fmt"
 	"image"
+	"math"
 	"reflect"
 	"runtime"
 	"unsafe"
@@ -914,23 +915,8 @@ func GenFrame(w int,h int, num int, den int) (img *VideoFrame, err error) {
 	frame.height=C.int(h)
 	frame.format=C.AV_PIX_FMT_YUV420P
 	C.av_frame_get_buffer(frame,0)
-	cw := (w+1)/2
-	ch := (h+1)/2
-	i0 := w*h + 0*cw*ch
-	i1 := w*h + 1*cw*ch
-	i2 := w*h + 2*cw*ch
-	b := make([]byte, i2)
-
 	img = &VideoFrame{
-		Image: image.YCbCr{
-			Y:              b[:i0:i0],
-			Cb:             b[i0:i1:i1],
-			Cr:             b[i1:i2:i2],
-			YStride:        w,
-			CStride:        cw,
-			SubsampleRatio: image.YCbCrSubsampleRatio420,
-			Rect:           image.Rect(0, 0, w, h),
-		},
+		Image: *image.NewYCbCr(image.Rect(0,0,w,h),image.YCbCrSubsampleRatio420),
 		frame: frame,
 		Framerate: VideoFramerate{
 			Num: num,
@@ -940,4 +926,69 @@ func GenFrame(w int,h int, num int, den int) (img *VideoFrame, err error) {
 	runtime.SetFinalizer(img, freeVideoFrame)
 
 	return
+}
+
+func overlay(img *VideoFrame,img2 *VideoFrame, x int,y int){
+	i2w:=img2.Image.YStride
+	i1w:=img.Image.YStride
+	i2ch:=img2.Height()/2
+	i2cw:=img2.Image.CStride
+
+	//copyY
+	for a:=0;a<img2.Height();a++{
+		for b:=0;b<img2.Width();b++{
+			img.Image.Y[(i1w*(a+y))+(x+b)]=img2.Image.Y[(a*i2w)+b]
+		}
+	}
+	//copyCbCr
+	for a:=0;a<i2ch;a++ {
+		for b:=0;b<i2cw;b++ {
+			img.Image.Cb[img.Image.CStride*(a+y/2)+(x/2+b)]=img2.Image.Cb[a*img2.Image.CStride+b]
+			img.Image.Cr[img.Image.CStride*(a+y/2)+(x/2+b)]=img2.Image.Cr[a*img2.Image.CStride+b]
+		}
+	}
+}
+
+func resize(img *VideoFrame, w int,h int) *VideoFrame{
+	//создадим новый кадр
+	num,den:=img.GetFramerate()
+	dest,_:=GenFrame(w,h,num,den)
+
+
+	mdx:=float64(float64(img.Image.YStride)/float64(w))
+	mdy:=float64(float64(img.Height())/float64(h))
+
+	mdсx:=mdx
+	mdсy:=mdy
+
+	i2w:=dest.Image.YStride
+	i2cw:=dest.Image.CStride
+	i1w:=img.Image.YStride
+	i1cw:=img.Image.CStride
+
+	var wCntr float64 = 0.0
+	var posFrom int
+	var posTo int
+	for a := 0; a < i2w; a++ {
+		var hCntr float64 = 0.0
+		for b := 0; b < dest.Height(); b++ {
+			dest.Image.Y[(i2w*b)+a]=img.Image.Y[int(math.Abs(hCntr))*i1w+int(math.Abs(wCntr))]
+			hCntr+=mdy
+		}
+		wCntr+=mdx
+	}
+	wCntr = 0.0
+	for a := 0; a < i2cw; a++ {
+		var hCntr float64 = 0.0
+		for b := 0; b < dest.Height()/2; b++ {
+			posFrom=int(math.Abs(hCntr))*i1cw+int(math.Abs(wCntr))
+			posTo=(i2cw*b)+a
+			dest.Image.Cr[posTo]=img.Image.Cr[posFrom]
+			dest.Image.Cb[posTo]=img.Image.Cb[posFrom]
+			hCntr+=mdсy
+		}
+		wCntr+=mdсx
+	}
+
+	return dest
 }
