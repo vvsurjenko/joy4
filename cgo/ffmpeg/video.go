@@ -928,7 +928,7 @@ func GenFrame(w int,h int, num int, den int) (img *VideoFrame, err error) {
 	return
 }
 
-func overlay(img *VideoFrame,img2 *VideoFrame, x int,y int){
+func Overlay(img *VideoFrame,img2 *VideoFrame, x int,y int){
 	i2w:=img2.Image.YStride
 	i1w:=img.Image.YStride
 	i2ch:=img2.Height()/2
@@ -949,7 +949,7 @@ func overlay(img *VideoFrame,img2 *VideoFrame, x int,y int){
 	}
 }
 
-func resize(img *VideoFrame, w int,h int) *VideoFrame{
+func Resize(img *VideoFrame, w int,h int) *VideoFrame{
 	//создадим новый кадр
 	num,den:=img.GetFramerate()
 	dest,_:=GenFrame(w,h,num,den)
