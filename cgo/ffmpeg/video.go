@@ -995,7 +995,7 @@ func Resize(img *VideoFrame, w int,h int) *VideoFrame{
 	dest,_:=GenFrame(w,h,num,den)
 
 
-	mdx:=float64(float64(img.Image.YStride)/float64(w))
+	mdx:=float64(float64(img.Width())/float64(w))
 	mdy:=float64(float64(img.Height())/float64(h))
 
 	mdсx:=mdx
