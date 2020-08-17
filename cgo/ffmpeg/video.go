@@ -914,6 +914,7 @@ func GenFrame(w int,h int, num int, den int) (img *VideoFrame, err error) {
 	frame.width=C.int(w)
 	frame.height=C.int(h)
 	frame.format=C.AV_PIX_FMT_YUV420P
+
 	C.av_frame_get_buffer(frame,0)
 	img = &VideoFrame{
 		Image: *image.NewYCbCr(image.Rect(0,0,w,h),image.YCbCrSubsampleRatio420),
@@ -924,8 +925,47 @@ func GenFrame(w int,h int, num int, den int) (img *VideoFrame, err error) {
 		},
 	}
 	runtime.SetFinalizer(img, freeVideoFrame)
-
 	return
+}
+func GenFrameImg(from *image.YCbCr,w int,h int, num int, den int) (img *VideoFrame, err error) {
+	frame := C.av_frame_alloc()
+	frame.width=C.int(w)
+	frame.height=C.int(h)
+	C.av_frame_get_buffer(frame,0)
+	image:= image.YCbCr{
+		Y:              make([]byte, len(from.Y)),
+		Cb:             make([]byte, len(from.Cb)),
+		Cr:             make([]byte, len(from.Cr)),
+		SubsampleRatio: from.SubsampleRatio,
+		YStride:        from.YStride,
+		CStride:        from.CStride,
+		Rect:           from.Rect,
+	}
+	img = &VideoFrame{
+		Image: image,
+		frame: frame,
+		Framerate: VideoFramerate{
+			Num: num,
+			Den: den,
+		},
+	}
+	runtime.SetFinalizer(img, freeVideoFrame)
+	return
+}
+
+func Copy(img *VideoFrame) *VideoFrame{
+	//создадим новый кадр
+	dest,_:=GenFrameImg(&img.Image,img.Width(),img.Height(),img.Framerate.Num,img.Framerate.Den)
+	C.av_frame_copy_props(dest.frame,img.frame)
+	//пока хз как их обрабатывать
+	for a:=0;a< len(img.Image.Y);a++ {
+		dest.Image.Y[a]=img.Image.Y[a]
+	}
+	for a:=0;a<len(img.Image.Cr);a++{
+		dest.Image.Cr[a]=img.Image.Cr[a]
+		dest.Image.Cb[a]=img.Image.Cb[a]
+	}
+	return dest
 }
 
 func Overlay(img *VideoFrame,img2 *VideoFrame, x int,y int){
