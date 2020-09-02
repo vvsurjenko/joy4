@@ -91,10 +91,7 @@ func (self *Server) ListenAndServe(status chan bool) (err error) {
 	if tcpaddr, err = net.ResolveTCPAddr("tcp", addr); err != nil {
 		err = fmt.Errorf("rtmp: ListenAndServe: %s", err)
 		if status!=nil {
-			select {
-			case status <- false:
-			default:
-			}
+			status <- false
 		}
 		return
 	}
@@ -102,53 +99,41 @@ func (self *Server) ListenAndServe(status chan bool) (err error) {
 	var listener *net.TCPListener
 	if listener, err = net.ListenTCP("tcp", tcpaddr); err != nil {
 		if status!=nil {
-			select {
-			case status <- false:
-			default:
-			}
+			status <- false
 		}
 		return
 	}
 
-	if Debug {
 		fmt.Println("rtmp: server: listening on", addr)
-	}
+		if status!=nil {
+			status <- true
+		}
 
 	for {
 		var netconn net.Conn
+		fmt.Println("1")
 		if netconn, err = listener.Accept(); err != nil {
+			fmt.Println("2")
 			if status!=nil {
-				select {
-				case status <- false:
-				default:
-				}
+				status <- false
 			}
 			return
 		}
-
-		if Debug {
-			fmt.Println("rtmp: server: accepted")
-		}
+		fmt.Println("3")
+		fmt.Println("rtmp: server: accepted")
 
 		conn := NewConn(netconn)
 		conn.isserver = true
 		go func() {
 			err := self.handleConn(conn)
-			if Debug {
 				if status!=nil {
-					select {
-					case status <- false:
-					default:
-					}
-				}
+					status <- false
+
 				fmt.Println("rtmp: server: client closed err:", err)
 			}
 		}()
 		if status!=nil {
-			select {
-			case status <- true:
-			default:
-			}
+			status <- true
 		}
 	}
 }
