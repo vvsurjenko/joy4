@@ -82,7 +82,7 @@ func (self *Server) handleConn(conn *Conn) (err error) {
 	return
 }
 
-func (self *Server) ListenAndServe() (err error) {
+func (self *Server) ListenAndServe(status chan bool) (err error) {
 	addr := self.Addr
 	if addr == "" {
 		addr = ":1935"
@@ -90,11 +90,19 @@ func (self *Server) ListenAndServe() (err error) {
 	var tcpaddr *net.TCPAddr
 	if tcpaddr, err = net.ResolveTCPAddr("tcp", addr); err != nil {
 		err = fmt.Errorf("rtmp: ListenAndServe: %s", err)
+		select {
+		case status<-false:
+		default:
+		}
 		return
 	}
 
 	var listener *net.TCPListener
 	if listener, err = net.ListenTCP("tcp", tcpaddr); err != nil {
+		select {
+		case status<-false:
+		default:
+		}
 		return
 	}
 
@@ -105,6 +113,10 @@ func (self *Server) ListenAndServe() (err error) {
 	for {
 		var netconn net.Conn
 		if netconn, err = listener.Accept(); err != nil {
+			select {
+			case status<-false:
+			default:
+			}
 			return
 		}
 
@@ -117,9 +129,17 @@ func (self *Server) ListenAndServe() (err error) {
 		go func() {
 			err := self.handleConn(conn)
 			if Debug {
+				select {
+				case status<-false:
+				default:
+				}
 				fmt.Println("rtmp: server: client closed err:", err)
 			}
 		}()
+		select {
+		case status<-true:
+		default:
+		}
 	}
 }
 
