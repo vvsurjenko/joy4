@@ -82,7 +82,7 @@ func (self *Server) handleConn(conn *Conn) (err error) {
 	return
 }
 
-func (self *Server) ListenAndServe(status chan bool) (err error) {
+func (self *Server) ListenAndServe() (err error) {
 	addr := self.Addr
 	if addr == "" {
 		addr = ":1935"
@@ -90,51 +90,36 @@ func (self *Server) ListenAndServe(status chan bool) (err error) {
 	var tcpaddr *net.TCPAddr
 	if tcpaddr, err = net.ResolveTCPAddr("tcp", addr); err != nil {
 		err = fmt.Errorf("rtmp: ListenAndServe: %s", err)
-		if status!=nil {
-			status <- false
-		}
 		return
 	}
 
 	var listener *net.TCPListener
 	if listener, err = net.ListenTCP("tcp", tcpaddr); err != nil {
-		if status!=nil {
-			status <- false
-		}
 		return
 	}
 
+	if Debug {
 		fmt.Println("rtmp: server: listening on", addr)
-		if status!=nil {
-			status <- true
-		}
+	}
 
 	for {
 		var netconn net.Conn
-		fmt.Println("1")
 		if netconn, err = listener.Accept(); err != nil {
-			fmt.Println("2")
-			if status!=nil {
-				status <- false
-			}
 			return
 		}
-		fmt.Println("3")
-		fmt.Println("rtmp: server: accepted")
+
+		if Debug {
+			fmt.Println("rtmp: server: accepted")
+		}
 
 		conn := NewConn(netconn)
 		conn.isserver = true
 		go func() {
 			err := self.handleConn(conn)
-				if status!=nil {
-					status <- false
-
+			if Debug {
 				fmt.Println("rtmp: server: client closed err:", err)
 			}
 		}()
-		if status!=nil {
-			status <- true
-		}
 	}
 }
 
@@ -1700,7 +1685,7 @@ func Handler(h *avutil.RegisterHandler) {
 		}
 
 		go func() {
-			waitstart <- server.ListenAndServe(nil)
+			waitstart <- server.ListenAndServe()
 		}()
 
 		select {
@@ -1741,7 +1726,7 @@ func Handler(h *avutil.RegisterHandler) {
 		}
 
 		go func() {
-			waitstart <- server.ListenAndServe(nil)
+			waitstart <- server.ListenAndServe()
 		}()
 
 		select {
