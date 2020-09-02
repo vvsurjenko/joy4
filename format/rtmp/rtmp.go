@@ -90,18 +90,22 @@ func (self *Server) ListenAndServe(status chan bool) (err error) {
 	var tcpaddr *net.TCPAddr
 	if tcpaddr, err = net.ResolveTCPAddr("tcp", addr); err != nil {
 		err = fmt.Errorf("rtmp: ListenAndServe: %s", err)
-		select {
-		case status<-false:
-		default:
+		if status!=nil {
+			select {
+			case status <- false:
+			default:
+			}
 		}
 		return
 	}
 
 	var listener *net.TCPListener
 	if listener, err = net.ListenTCP("tcp", tcpaddr); err != nil {
-		select {
-		case status<-false:
-		default:
+		if status!=nil {
+			select {
+			case status <- false:
+			default:
+			}
 		}
 		return
 	}
@@ -113,9 +117,11 @@ func (self *Server) ListenAndServe(status chan bool) (err error) {
 	for {
 		var netconn net.Conn
 		if netconn, err = listener.Accept(); err != nil {
-			select {
-			case status<-false:
-			default:
+			if status!=nil {
+				select {
+				case status <- false:
+				default:
+				}
 			}
 			return
 		}
@@ -129,16 +135,20 @@ func (self *Server) ListenAndServe(status chan bool) (err error) {
 		go func() {
 			err := self.handleConn(conn)
 			if Debug {
-				select {
-				case status<-false:
-				default:
+				if status!=nil {
+					select {
+					case status <- false:
+					default:
+					}
 				}
 				fmt.Println("rtmp: server: client closed err:", err)
 			}
 		}()
-		select {
-		case status<-true:
-		default:
+		if status!=nil {
+			select {
+			case status <- true:
+			default:
+			}
 		}
 	}
 }
@@ -1705,7 +1715,7 @@ func Handler(h *avutil.RegisterHandler) {
 		}
 
 		go func() {
-			waitstart <- server.ListenAndServe()
+			waitstart <- server.ListenAndServe(nil)
 		}()
 
 		select {
@@ -1746,7 +1756,7 @@ func Handler(h *avutil.RegisterHandler) {
 		}
 
 		go func() {
-			waitstart <- server.ListenAndServe()
+			waitstart <- server.ListenAndServe(nil)
 		}()
 
 		select {
