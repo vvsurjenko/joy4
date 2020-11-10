@@ -3,3 +3,4 @@
 examples/video_transcoder/video_transcoder
 *.iml
 *.xml
+*.png

@@ -117,6 +117,7 @@ type CodecType uint32
 
 var (
 	H264 = MakeVideoCodecType(avCodecTypeMagic + 1)
+	VP8 = MakeVideoCodecType(avCodecTypeMagic + 2)
 	AAC       = MakeAudioCodecType(avCodecTypeMagic + 1)
 	PCM_MULAW = MakeAudioCodecType(avCodecTypeMagic + 2)
 	PCM_ALAW  = MakeAudioCodecType(avCodecTypeMagic + 3)
@@ -131,6 +132,8 @@ func (self CodecType) String() string {
 	switch self {
 	case H264:
 		return "H264"
+	case VP8:
+		return "VP8"
 	case AAC:
 		return "AAC"
 	case PCM_MULAW:

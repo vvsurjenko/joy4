@@ -871,6 +871,29 @@ func NewVideoDecoder(stream av.CodecData) (dec *VideoDecoder, err error) {
 	return
 }
 
+func NewVP8Decoder() (dec *VideoDecoder, err error) {
+	_dec := &VideoDecoder{}
+	//var id uint32
+	//format:=C.av_find_input_format(C.CString("webm"))
+	c := C.avcodec_find_decoder(C.AV_CODEC_ID_VP8)
+	if c == nil || C.avcodec_get_type(C.AV_CODEC_ID_VP8) != C.AVMEDIA_TYPE_VIDEO {
+		err = fmt.Errorf("ffmpeg: cannot find video decoder codecId=%d", C.AV_CODEC_ID_VP8)
+		return
+	}
+	fmt.Println(c)
+
+	if _dec.ff, err = newFFCtxByCodec(c); err != nil {
+		return
+	}
+	if err = _dec.Setup(); err != nil {
+		return
+	}
+	fmt.Println("_dec.ff=",_dec.ff)
+	dec = _dec
+	return
+
+}
+
 func fromCPtr(buf unsafe.Pointer, size int) (ret []uint8) {
 	hdr := (*reflect.SliceHeader)((unsafe.Pointer(&ret)))
 	hdr.Cap = size
