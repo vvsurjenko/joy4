@@ -2,10 +2,10 @@
 package main
 
 import (
-	"github.com/vvsurjenko/joy4/av"
-	"github.com/vvsurjenko/joy4/format"
-	"github.com/vvsurjenko/joy4/av/avutil"
-	"github.com/vvsurjenko/joy4/cgo/ffmpeg"
+	"../../av"
+	"../../format"
+	"../../av/avutil"
+	"../../cgo/ffmpeg"
 )
 
 // need ffmpeg installed

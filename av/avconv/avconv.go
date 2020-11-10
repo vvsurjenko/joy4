@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"io"
 	"time"
+	"../../av"
+	"../avutil"
+	"../pktque"
+	"../transcode"
 
-	"github.com/vvsurjenko/joy4/av"
+	/*"github.com/vvsurjenko/joy4/av"
 	"github.com/vvsurjenko/joy4/av/avutil"
 	"github.com/vvsurjenko/joy4/av/pktque"
-	"github.com/vvsurjenko/joy4/av/transcode"
+	"github.com/vvsurjenko/joy4/av/transcode"*/
 )
 
 var Debug bool

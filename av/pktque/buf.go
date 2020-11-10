@@ -1,7 +1,8 @@
 package pktque
 
 import (
-	"github.com/vvsurjenko/joy4/av"
+	"../../av"
+	//"github.com/vvsurjenko/joy4/av"
 )
 
 type Buf struct {

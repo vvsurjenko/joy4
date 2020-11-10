@@ -2,9 +2,12 @@
 package aac
 
 import (
-	"github.com/vvsurjenko/joy4/av/avutil"
-	"github.com/vvsurjenko/joy4/av"
-	"github.com/vvsurjenko/joy4/codec/aacparser"
+	"../../av"
+	"../../av/avutil"
+	"../../codec/aacparser"
+	//"github.com/vvsurjenko/joy4/av/avutil"
+	//"github.com/vvsurjenko/joy4/av"
+	//"github.com/vvsurjenko/joy4/codec/aacparser"
 	"time"
 	"fmt"
 	"io"

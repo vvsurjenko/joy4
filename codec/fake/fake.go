@@ -1,7 +1,8 @@
 package fake
 
 import (
-	"github.com/vvsurjenko/joy4/av"
+	//"github.com/vvsurjenko/joy4/av"
+	"../../av"
 )
 
 type CodecData struct {

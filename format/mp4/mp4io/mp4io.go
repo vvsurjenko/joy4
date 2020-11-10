@@ -2,7 +2,8 @@
 package mp4io
 
 import (
-	"github.com/vvsurjenko/joy4/utils/bits/pio"
+	"../../../utils/bits/pio"
+	//"github.com/vvsurjenko/joy4/utils/bits/pio"
 	"os"
 	"io"
 	"fmt"

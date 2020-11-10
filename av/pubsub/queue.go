@@ -2,8 +2,10 @@
 package pubsub
 
 import (
-	"github.com/vvsurjenko/joy4/av"
-	"github.com/vvsurjenko/joy4/av/pktque"
+	"../../av"
+	"../../av/pktque"
+	//"github.com/vvsurjenko/joy4/av"
+	//"github.com/vvsurjenko/joy4/av/pktque"
 	"io"
 	"sync"
 	"time"
