@@ -3,22 +3,22 @@ package flv
 import (
 	"bufio"
 	"fmt"
-	"../../utils/bits/pio"
+	/*"../../utils/bits/pio"
 	"../../av"
 	"../../av/avutil"
 	"../../codec"
 	"../../codec/aacparser"
 	"../../codec/fake"
 	"../../codec/h264parser"
-	"../../format/flv/flvio"
-	/*"github.com/vvsurjenko/joy4/utils/bits/pio"
+	"../../format/flv/flvio"*/
+	"github.com/vvsurjenko/joy4/utils/bits/pio"
 	"github.com/vvsurjenko/joy4/av"
 	"github.com/vvsurjenko/joy4/av/avutil"
 	"github.com/vvsurjenko/joy4/codec"
 	"github.com/vvsurjenko/joy4/codec/aacparser"
 	"github.com/vvsurjenko/joy4/codec/fake"
 	"github.com/vvsurjenko/joy4/codec/h264parser"
-	"github.com/vvsurjenko/joy4/format/flv/flvio"*/
+	"github.com/vvsurjenko/joy4/format/flv/flvio"
 	"io"
 )
 

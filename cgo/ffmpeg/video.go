@@ -24,10 +24,10 @@ import (
 	"runtime"
 	"unsafe"
 
-	"../../av"
-	"../../codec/h264parser"
-	//"github.com/vvsurjenko/joy4/av"
-	//"github.com/vvsurjenko/joy4/codec/h264parser"
+	//"../../av"
+	//"../../codec/h264parser"
+	"github.com/vvsurjenko/joy4/av"
+	"github.com/vvsurjenko/joy4/codec/h264parser"
 )
 
 // VideoFramerate represents a FPS value with a fraction (numerator + denominator)

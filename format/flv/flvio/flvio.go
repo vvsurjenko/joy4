@@ -2,10 +2,10 @@ package flvio
 
 import (
 	"fmt"
-	"../../../utils/bits/pio"
-	"../../../av"
-	//"github.com/vvsurjenko/joy4/utils/bits/pio"
-	//"github.com/vvsurjenko/joy4/av"
+	//"../../../utils/bits/pio"
+	//"../../../av"
+	"github.com/vvsurjenko/joy4/utils/bits/pio"
+	"github.com/vvsurjenko/joy4/av"
 	"io"
 	"time"
 )

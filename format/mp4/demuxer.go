@@ -6,14 +6,14 @@ import (
 	"io"
 	"time"
 
-	"../../av"
-	//"github.com/vvsurjenko/joy4/av"
-	"../../codec/aacparser"
-	//"github.com/vvsurjenko/joy4/codec/aacparser"
-	"../../codec/h264parser"
-	//"github.com/vvsurjenko/joy4/codec/h264parser"
-	"../../format/mp4/mp4io"
-	//"github.com/vvsurjenko/joy4/format/mp4/mp4io"
+	//"../../av"
+	"github.com/vvsurjenko/joy4/av"
+	//"../../codec/aacparser"
+	"github.com/vvsurjenko/joy4/codec/aacparser"
+	//"../../codec/h264parser"
+	"github.com/vvsurjenko/joy4/codec/h264parser"
+	//"../../format/mp4/mp4io"
+	"github.com/vvsurjenko/joy4/format/mp4/mp4io"
 )
 
 type Demuxer struct {

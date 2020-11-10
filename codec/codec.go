@@ -1,10 +1,10 @@
 package codec
 
 import (
-	"../av"
-	"../codec/fake"
-	//"github.com/vvsurjenko/joy4/av"
-	//"github.com/vvsurjenko/joy4/codec/fake"
+	//"../av"
+	//"../codec/fake"
+	"github.com/vvsurjenko/joy4/av"
+	"github.com/vvsurjenko/joy4/codec/fake"
 	"time"
 )
 

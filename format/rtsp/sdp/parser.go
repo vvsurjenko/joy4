@@ -4,8 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"../../../av"
-	//"github.com/vvsurjenko/joy4/av"
+	//"../../../av"
+	"github.com/vvsurjenko/joy4/av"
 	"strconv"
 	"strings"
 )

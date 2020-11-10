@@ -1,10 +1,10 @@
 package rtsp
 
 import (
-	"../../av"
-	//"github.com/vvsurjenko/joy4/av"
-	"../../format/rtsp/sdp"
-	//"github.com/vvsurjenko/joy4/format/rtsp/sdp"
+	//"../../av"
+	"github.com/vvsurjenko/joy4/av"
+	//"../../format/rtsp/sdp"
+	"github.com/vvsurjenko/joy4/format/rtsp/sdp"
 	"time"
 )
 

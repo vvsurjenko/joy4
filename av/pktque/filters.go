@@ -4,8 +4,8 @@ package pktque
 
 import (
 	"time"
-	"../../av"
-	//"github.com/vvsurjenko/joy4/av"
+	//"../../av"
+	"github.com/vvsurjenko/joy4/av"
 )
 
 type Filter interface {
