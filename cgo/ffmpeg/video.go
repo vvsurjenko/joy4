@@ -463,7 +463,9 @@ func (enc *VideoEncoder) Setup() (err error) {
 	if err = enc.SetOption("crf", "23"); err != nil {
 		return
 	}
-
+	if err = enc.SetOption("tune", "film"); err != nil {
+		return
+	}
 	// All the following params are described in ffmpeg: avcodec.h, in struct AVCodecContext
 	ff.codecCtx.width = C.int(enc.width)
 	ff.codecCtx.height = C.int(enc.height)
@@ -472,14 +474,14 @@ func (enc *VideoEncoder) Setup() (err error) {
 	ff.codecCtx.time_base.num = C.int(enc.fpsDen)
 	ff.codecCtx.time_base.den = C.int(enc.fpsNum)
 	ff.codecCtx.gop_size = C.int(enc.gopSize)
-
+	ff.codecCtx.max_b_frames=3;
 	// Use VBV for rate control.
 	// rc_max_rate is the target bitrate, and rc_buffer_size is the time window
 	// over which the bitrate is controlled. By setting size = max * 2, we give
 	// a window of 2 seconds to mitigate the effects of bitrate peaks on the
 	// overall quality
 	ff.codecCtx.rc_max_rate = C.int64_t(enc.Bitrate)
-	ff.codecCtx.rc_buffer_size = C.int(ff.codecCtx.rc_max_rate * 2)
+	ff.codecCtx.rc_buffer_size = C.int(ff.codecCtx.rc_max_rate * 4)
 
 	if C.avcodec_open2(ff.codecCtx, ff.codec, &ff.options) != 0 {
 		err = fmt.Errorf("ffmpeg: encoder: avcodec_open2 failed")
@@ -489,6 +491,39 @@ func (enc *VideoEncoder) Setup() (err error) {
 	// Leave codecData uninitialized until SPS and PPS are received (see in encodeOne())
 	enc.codecData = h264parser.CodecData{}
 
+	return
+}
+func (enc *VideoEncoder) Setup2() (err error) {
+	ff := &enc.ff.ff
+	ff.frame = C.av_frame_alloc()
+	ff.codecCtx.bit_rate = C.long(5000000)
+	ff.codecCtx.rc_max_rate = C.int64_t(enc.Bitrate)
+	ff.codecCtx.rc_buffer_size = C.int(ff.codecCtx.rc_max_rate * 2)
+	/* resolution must be a multiple of two */
+	ff.codecCtx.width = C.int(enc.width)
+	ff.codecCtx.height = C.int(enc.height)
+	/* frames per second */
+	
+	ff.codecCtx.time_base.num = C.int(1)
+	ff.codecCtx.time_base.den = C.int(25)
+	ff.codecCtx.gop_size =  C.int(25)
+	ff.codecCtx.max_b_frames=1;
+	ff.codecCtx.pix_fmt = C.AV_PIX_FMT_YUV420P;
+	if err = enc.SetOption("preset", "ultrafast"); err != nil {
+		return
+	}
+	if err = enc.SetOption("crf", "23"); err != nil {
+		return
+	}
+	if err = enc.SetOption("tune", "film"); err != nil {
+		return
+	}
+
+	if C.avcodec_open2(ff.codecCtx, ff.codec, &ff.options) != 0 {
+		err = fmt.Errorf("ffmpeg: encoder: avcodec_open2 failed")
+		return
+	}
+	enc.codecData = h264parser.CodecData{}
 	return
 }
 
@@ -510,7 +545,64 @@ func (enc *VideoEncoder) CodecData() (codec av.VideoCodecData, err error) {
 	codec = enc.codecData
 	return
 }
+func (enc *VideoEncoder) EncodeOne(img *VideoFrame) (gotpkt bool, pkt av.Packet, err error) {
+	if err = enc.prepare(); err != nil {
+		return
+	}
 
+	ff := &enc.ff.ff
+	cpkt := C.AVPacket{}
+	
+	cgotpkt := C.int(0)
+
+	ff.frame.data[0] = (*C.uchar)(unsafe.Pointer(&img.Image.Y[0]))
+	ff.frame.data[1] = (*C.uchar)(unsafe.Pointer(&img.Image.Cb[0]))
+	ff.frame.data[2] = (*C.uchar)(unsafe.Pointer(&img.Image.Cr[0]))
+
+	ff.frame.linesize[0] = C.int(img.Image.YStride)
+	ff.frame.linesize[1] = C.int(img.Image.CStride)
+	ff.frame.linesize[2] = C.int(img.Image.CStride)
+
+	ff.frame.width = C.int(img.Image.Rect.Dx())
+	ff.frame.height = C.int(img.Image.Rect.Dy())
+	ff.frame.format = img.frame.format
+
+	ff.frame.pts = C.int64_t(enc.pts)
+	enc.pts++
+
+	cerr := C.avcodec_encode_video2(ff.codecCtx, &cpkt, ff.frame, &cgotpkt)
+	if cerr < C.int(0) {
+		err = fmt.Errorf("ffmpeg: avcodec_encode_video2 failed: %d", cerr)
+		return
+	}
+
+	var avpkt av.Packet
+	if cgotpkt != 0 {
+		gotpkt = true
+
+		fmt.Println("encoded frame with pts:", cpkt.pts, " dts:", cpkt.dts, "duration:", cpkt.duration, "flags:", cpkt.flags)
+
+		avpkt.Data = C.GoBytes(unsafe.Pointer(cpkt.data), cpkt.size)
+		avpkt.IsKeyFrame = (cpkt.flags & C.AV_PKT_FLAG_KEY) == C.AV_PKT_FLAG_KEY
+
+		// Initialize codecData from SPS and PPS
+		// This is done only once, when the first key frame is encoded
+		if !enc.codecDataInitialised {
+			var codecData av.CodecData
+			codecData, err = h264parser.PktToCodecData(avpkt)
+			if err == nil {
+				enc.codecData = codecData.(h264parser.CodecData)
+				enc.codecDataInitialised = true
+			}
+		}
+
+		//C.av_packet_unref(&cpkt)
+	} else if enc.codecDataInitialised {
+		fmt.Println("ffmpeg: no pkt !")
+	}
+
+	return gotpkt, avpkt, err
+}
 func (enc *VideoEncoder) encodeOne(img *VideoFrame) (gotpkt bool, pkt av.Packet, err error) {
 	if err = enc.prepare(); err != nil {
 		return
@@ -949,6 +1041,14 @@ func GenFrame(w int,h int, num int, den int) (img *VideoFrame, err error) {
 			Den: den,
 		},
 	}
+
+	/*for a:=0;a< len(img.Image.Y);a++{
+		img.Image.Y[a]=0
+	}*/
+	for a:=0;a<len(img.Image.Cb);a++{
+		img.Image.Cb[a]=128
+		img.Image.Cr[a]=128
+	}
 	runtime.SetFinalizer(img, freeVideoFrame)
 	return
 }
@@ -1002,24 +1102,53 @@ func Overlay(img *VideoFrame,img2 *VideoFrame, x int,y int){
 	//copyY
 	for a:=0;a<img2.Height();a++{
 		for b:=0;b<img2.Width();b++{
-			img.Image.Y[(i1w*(a+y))+(x+b)]=img2.Image.Y[(a*i2w)+b]
+			if len(img2.Image.Y)>(a*i2w)+b {
+				img.Image.Y[(i1w*(a+y))+(x+b)] = img2.Image.Y[(a*i2w)+b]
+			}
 		}
 	}
 	//copyCbCr
 	for a:=0;a<i2ch;a++ {
 		for b:=0;b<i2cw;b++ {
-			img.Image.Cb[img.Image.CStride*(a+y/2)+(x/2+b)]=img2.Image.Cb[a*img2.Image.CStride+b]
-			img.Image.Cr[img.Image.CStride*(a+y/2)+(x/2+b)]=img2.Image.Cr[a*img2.Image.CStride+b]
+			if len(img2.Image.Cb)>a*img2.Image.CStride+b && len(img2.Image.Cr)>a*img2.Image.CStride+b {
+				img.Image.Cb[img.Image.CStride*(a+y/2)+(x/2+b)] = img2.Image.Cb[a*img2.Image.CStride+b]
+				img.Image.Cr[img.Image.CStride*(a+y/2)+(x/2+b)] = img2.Image.Cr[a*img2.Image.CStride+b]
+			}
 		}
 	}
 }
 
 func Resize(img *VideoFrame, w int,h int) *VideoFrame{
+
 	//создадим новый кадр
 	num,den:=img.GetFramerate()
 	dest,_:=GenFrame(w,h,num,den)
 
+	//пересчитаем пропорции
 
+	var newW, newH int
+	if img.Width()>img.Height(){
+		coef:=float32(img.Width())/float32(img.Height())
+		newW=w
+		newH=int(float32(newW)/coef)
+		if newH>h{
+			newH=h
+			newW=int(float32(newH)*coef)
+		}
+	} else {
+		coef:=float32(img.Height())/float32(img.Width())
+		newH=h
+		newW=int(float32(newH)/coef)
+		if newW>w{
+			newW=w
+			newH=int(float32(newW)*coef)
+		}
+	}
+	fmt.Println("RESIZING w=",w," h=",h," newW=",newW," newH=",newH," imgW=",img.Width()," imgH=",img.Height())
+	dx:=(w-newW)/2
+	dy:=(h-newH)/2
+	w=newW
+	h=newH
 	mdx:=float64(float64(img.Width())/float64(w))
 	mdy:=float64(float64(img.Height())/float64(h))
 
@@ -1034,26 +1163,33 @@ func Resize(img *VideoFrame, w int,h int) *VideoFrame{
 	var wCntr float64 = 0.0
 	var posFrom int
 	var posTo int
-	for a := 0; a < i2w; a++ {
+	for a := dx; a < i2w-dx; a++ {
 		var hCntr float64 = 0.0
 		for b := 0; b < dest.Height(); b++ {
-			dest.Image.Y[(i2w*b)+a]=img.Image.Y[int(math.Abs(hCntr))*i1w+int(math.Abs(wCntr))]
+			if len(dest.Image.Y)>(i2w*(b+dy))+a && len(img.Image.Y)>int(math.Abs(hCntr))*i1w+int(math.Abs(wCntr)) {
+				//img.Image.Y[(i1w*(a+y))+(x+b)] = img2.Image.Y[(a*i2w)+b]
+				dest.Image.Y[(i2w*(b+dy))+(a)] = img.Image.Y[int(math.Abs(hCntr))*i1w+int(math.Abs(wCntr))]
+			}
 			hCntr+=mdy
 		}
 		wCntr+=mdx
 	}
 	wCntr = 0.0
-	for a := 0; a < i2cw; a++ {
+	dx=dx/2
+	dy=dy/2
+	for a := dx; a < i2cw-dx; a++ {
 		var hCntr float64 = 0.0
 		for b := 0; b < dest.Height()/2; b++ {
 			posFrom=int(math.Abs(hCntr))*i1cw+int(math.Abs(wCntr))
-			posTo=(i2cw*b)+a
-			dest.Image.Cr[posTo]=img.Image.Cr[posFrom]
-			dest.Image.Cb[posTo]=img.Image.Cb[posFrom]
+			posTo=(i2cw*(b+dy))+a
+			if len(dest.Image.Cr)>posTo && len(dest.Image.Cb)>posTo &&
+				len(img.Image.Cr)>posFrom && len(img.Image.Cb)>posFrom {
+				dest.Image.Cr[posTo] = img.Image.Cr[posFrom]
+				dest.Image.Cb[posTo] = img.Image.Cb[posFrom]
+			}
 			hCntr+=mdсy
 		}
 		wCntr+=mdсx
 	}
-
 	return dest
 }
