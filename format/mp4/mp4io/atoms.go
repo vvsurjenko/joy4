@@ -3051,8 +3051,13 @@ func (self SampleSize) marshal(b []byte) (n int) {
 	pio.PutU32BE(b[n:], uint32(len(self.Entries)))
 	n += 4
 	for _, entry := range self.Entries {
-		pio.PutU32BE(b[n:], entry)
-		n += 4
+		if len(b[n:])<4 {
+			b=append(b,make([]byte, 0, 4)...)
+		}
+		if len(b[n:])>=4 {
+			pio.PutU32BE(b[n:], entry)
+			n += 4
+		}
 	}
 	return
 }

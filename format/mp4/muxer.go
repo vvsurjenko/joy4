@@ -173,13 +173,15 @@ func (self *Muxer) WriteHeader(streams []av.CodecData) (err error) {
 }
 
 func (self *Muxer) WritePacket(pkt av.Packet) (err error) {
-	stream := self.streams[pkt.Idx]
-	if stream.lastpkt != nil {
-		if err = stream.writePacket(*stream.lastpkt, pkt.Time-stream.lastpkt.Time); err != nil {
-			return
+	if len(self.streams)>int(pkt.Idx) {
+		stream := self.streams[pkt.Idx]
+		if stream.lastpkt != nil {
+			if err = stream.writePacket(*stream.lastpkt, pkt.Time-stream.lastpkt.Time); err != nil {
+				return
+			}
 		}
+		stream.lastpkt = &pkt
 	}
-	stream.lastpkt = &pkt
 	return
 }
 
